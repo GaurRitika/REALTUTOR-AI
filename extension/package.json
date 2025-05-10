@@ -1,0 +1,71 @@
+{
+  "name": "realtutor-ai",
+  "displayName": "RealTutor AI",
+  "description": "AI-powered coding tutor that provides real-time assistance",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.60.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onCommand:realtutor-ai.startTutoring"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "realtutor-ai.startTutoring",
+        "title": "Start RealTutor AI"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "realtutor-ai",
+          "title": "RealTutor AI",
+          "icon": "resources/tutor-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "realtutor-ai": [
+        {
+          "type": "webview",
+          "id": "realtutor-ai.tutorView",
+          "name": "AI Tutor"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "realtutor-ai.startTutoring",
+          "when": "view == realtutor-ai.tutorView",
+          "group": "navigation"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.60.0",
+    "@types/node": "^16.11.7",
+    "@typescript-eslint/eslint-plugin": "^5.30.0",
+    "@typescript-eslint/parser": "^5.30.0",
+    "eslint": "^8.13.0",
+    "typescript": "^4.7.2"
+  },
+  "dependencies": {
+    "ws": "^8.13.0"
+  }
+}

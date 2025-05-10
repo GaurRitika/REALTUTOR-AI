@@ -1,0 +1,19 @@
+{
+  "name": "realtutor-ai-backend",
+  "version": "1.0.0",
+  "description": "Backend server for RealTutor AI VS Code extension",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.5.0",
+    "node-fetch": "^3.3.2",
+    "openai": "^4.0.0",
+    "ws": "^8.13.0"
+  },
+  "devDependencies": {
+    "nodemon": "^2.0.22"
+  }
+}
