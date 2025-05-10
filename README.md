@@ -91,5 +91,5 @@ realtutor-ai/
 
 MIT 
 
-
+author - devritika.gaur@gmail.com
 2changes in files 1 in server.js and extension.ts
