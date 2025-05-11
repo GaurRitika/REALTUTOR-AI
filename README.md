@@ -38,7 +38,7 @@ Backend Setup
 
 .Clone the repository:
 
-git clone https://github.com/GaurRitika/REALTUTOR-AI/edit/main/README.md
+git clone https://github.com/GaurRitika/REALTUTOR-AI
 
 cd realtutor-ai/backend
 
