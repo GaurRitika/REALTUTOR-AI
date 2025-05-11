@@ -104,12 +104,16 @@ export function activate(context: vscode.ExtensionContext) {
                 case 'getStatus':
                     checkServerStatus();
                     break;
+                case 'feedback':
+                    // For now, just show a notification. In the future, you can log this to a file or server.
+                    vscode.window.showInformationMessage(`Feedback received: ${message.data.feedback === 'up' ? 'Helpful' : 'Not Helpful'}`);
+                    break;
             }
         });
     }
 
     // Use HTTP instead of WebSocket with caching
-    async function sendAnalysisRequest(data: any) {
+    async function sendAnalysisRequest(data: any, retryCount = 0): Promise<boolean> {
         try {
             // Generate cache key
             const cacheKey = generateCacheKey(data);
@@ -152,21 +156,25 @@ export function activate(context: vscode.ExtensionContext) {
             cleanCache();
             
             if (tutorPanel) {
-                tutorPanel.webview.postMessage(result);
+                // Generate a unique messageId for feedback
+                const messageId = Date.now() + Math.random().toString(36).substring(2, 8);
+                tutorPanel.webview.postMessage({ ...result, messageId });
             }
             
             return true;
         } catch (error) {
+            if (retryCount < 2) {
+                // Retry up to 2 times
+                return await sendAnalysisRequest(data, retryCount + 1);
+            }
             console.error('HTTP request error:', error);
-            vscode.window.showErrorMessage('Failed to connect to RealTutor AI server');
-            
+            vscode.window.showErrorMessage('Failed to connect to RealTutor AI server. Please check your connection or try again.');
             if (tutorPanel && isConnected) {
                 isConnected = false;
                 tutorPanel.webview.postMessage({ 
-                    type: 'status', 
+                    type: 'error', 
                     data: { 
-                        connected: false,
-                        error: 'Server not responding'
+               message: (error as Error)?.message || 'Server not responding. Please try again later.'
                     } 
                 });
             }
@@ -539,7 +547,7 @@ function getWebviewContent() {
             
             let messageHistory = [];
             
-            function addMessage(content, isUser = false) {
+            function addMessage(content, isUser = false, messageId = undefined) {
                 const messageDiv = document.createElement('div');
                 messageDiv.className = \`message \${isUser ? 'user-message' : 'ai-message'}\`;
                 
@@ -560,6 +568,38 @@ function getWebviewContent() {
                     });
                 } else {
                     messageDiv.textContent = content;
+                }
+                
+                // Add feedback buttons for AI messages
+                if (!isUser) {
+                    const feedbackDiv = document.createElement('div');
+                    feedbackDiv.style.marginTop = '8px';
+                    feedbackDiv.style.display = 'flex';
+                    feedbackDiv.style.gap = '8px';
+                    
+                    const thumbsUp = document.createElement('button');
+                    thumbsUp.textContent = '👍';
+                    thumbsUp.title = 'Helpful';
+                    thumbsUp.style.cursor = 'pointer';
+                    thumbsUp.onclick = () => {
+                        vscode.postMessage({ type: 'feedback', data: { messageId, feedback: 'up' } });
+                        thumbsUp.disabled = true;
+                        thumbsDown.disabled = true;
+                    };
+                    
+                    const thumbsDown = document.createElement('button');
+                    thumbsDown.textContent = '👎';
+                    thumbsDown.title = 'Not Helpful';
+                    thumbsDown.style.cursor = 'pointer';
+                    thumbsDown.onclick = () => {
+                        vscode.postMessage({ type: 'feedback', data: { messageId, feedback: 'down' } });
+                        thumbsUp.disabled = true;
+                        thumbsDown.disabled = true;
+                    };
+                    
+                    feedbackDiv.appendChild(thumbsUp);
+                    feedbackDiv.appendChild(thumbsDown);
+                    messageDiv.appendChild(feedbackDiv);
                 }
                 
                 messagesContainer.appendChild(messageDiv);
