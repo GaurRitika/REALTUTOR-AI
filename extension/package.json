@@ -12,7 +12,8 @@
   "activationEvents": [
     "onStartupFinished",
     "onCommand:realtutor-ai.startTutoring",
-    "onCommand:realtutor-ai.analyzeCode"
+    "onCommand:realtutor-ai.analyzeCode",
+    "onCommand:realtutor-ai.openChat"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -24,6 +25,10 @@
       {
         "command": "realtutor-ai.analyzeCode",
         "title": "RealTutor AI: Analyze Code"
+      },
+      {
+        "command": "realtutor-ai.openChat",
+        "title": "RealTutor AI: Open Chat"
       }
     ],
     "viewsContainers": {

@@ -38,6 +38,36 @@ export function activate(context: vscode.ExtensionContext) {
         tutorPanel.onDidDispose(() => {
             tutorPanel = undefined;
         });
+
+        // Handle messages from the webview
+        tutorPanel.webview.onDidReceiveMessage(async message => {
+            switch (message.type) {
+                case 'userMessage':
+                    if (isConnected) {
+                        const editor = vscode.window.activeTextEditor;
+                        const context = editor ? {
+                            text: editor.document.getText(),
+                            language: editor.document.languageId,
+                            fileName: editor.document.fileName
+                        } : {};
+                        
+                        await sendAnalysisRequest({
+                            text: message.data.message,
+                            ...context
+                        });
+                    } else {
+                        tutorPanel?.webview.postMessage({
+                            type: 'error',
+                            data: { message: 'Not connected to server' }
+                        });
+                    }
+                    break;
+                    
+                case 'getStatus':
+                    checkServerStatus();
+                    break;
+            }
+        });
     }
 
     // Use HTTP instead of WebSocket
@@ -262,15 +292,24 @@ export function activate(context: vscode.ExtensionContext) {
         }
     }, 30000);
 
+    // Add command to open chat panel
+    let chatCommandDisposable = vscode.commands.registerCommand('realtutor-ai.openChat', () => {
+        if (!tutorPanel) {
+            createTutorPanel();
+        } else {
+            tutorPanel.reveal();
+        }
+    });
+
     context.subscriptions.push(
         disposable, 
         analyzeCommand, 
+        chatCommandDisposable, 
         { dispose: () => clearInterval(statusInterval) }
     );
 }
 
 function getWebviewContent() {
-    // Add a model indicator and clear button
     return `<!DOCTYPE html>
     <html lang="en">
     <head>
@@ -279,141 +318,220 @@ function getWebviewContent() {
         <title>RealTutor AI</title>
         <style>
             body {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
                 padding: 20px;
-                font-family: var(--vscode-font-family);
-                color: var(--vscode-editor-foreground);
-                background-color: var(--vscode-editor-background);
-            }
-            .response {
-                margin: 10px 0;
-                padding: 15px;
-                border-radius: 5px;
-                background-color: var(--vscode-editor-inactiveSelectionBackground);
-                border: 1px solid var(--vscode-editor-lineHighlightBorder);
-                box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-            }
-            .response h3 {
-                margin-top: 0;
+                margin: 0;
+                background: var(--vscode-editor-background);
                 color: var(--vscode-editor-foreground);
             }
-            .response p {
-                margin: 5px 0;
+            .chat-container {
+                display: flex;
+                flex-direction: column;
+                height: calc(100vh - 40px);
+            }
+            .messages {
+                flex: 1;
+                overflow-y: auto;
+                padding: 20px;
+                display: flex;
+                flex-direction: column;
+                gap: 16px;
+            }
+            .message {
+                max-width: 80%;
+                padding: 12px 16px;
+                border-radius: 8px;
                 line-height: 1.5;
             }
-            .loading {
-                text-align: center;
-                padding: 20px;
-                color: var(--vscode-descriptionForeground);
+            .user-message {
+                align-self: flex-end;
+                background: var(--vscode-button-background);
+                color: var(--vscode-button-foreground);
             }
-            .status {
-                position: fixed;
-                top: 10px;
-                right: 10px;
-                padding: 5px 10px;
-                border-radius: 3px;
-                font-size: 12px;
+            .ai-message {
+                align-self: flex-start;
+                background: var(--vscode-editor-inactiveSelectionBackground);
             }
-            .status.connected {
-                background-color: var(--vscode-testing-iconPassed);
-                color: white;
+            .input-container {
+                display: flex;
+                gap: 8px;
+                padding: 16px;
+                background: var(--vscode-editor-background);
+                border-top: 1px solid var(--vscode-panel-border);
             }
-            .status.disconnected {
-                background-color: var(--vscode-testing-iconFailed);
-                color: white;
+            #messageInput {
+                flex: 1;
+                padding: 8px 12px;
+                border: 1px solid var(--vscode-input-border);
+                border-radius: 4px;
+                background: var(--vscode-input-background);
+                color: var(--vscode-input-foreground);
+                font-size: 14px;
             }
-            .model-indicator {
-                position: fixed;
-                top: 10px;
-                left: 10px;
-                padding: 5px 10px;
-                border-radius: 3px;
-                font-size: 12px;
-                background: var(--vscode-editorWidget-background);
-                color: var(--vscode-editorWidget-foreground);
-                border: 1px solid var(--vscode-editorWidget-border);
-            }
-            .clear-btn {
-                background-color: var(--vscode-button-background);
+            #sendButton {
+                padding: 8px 16px;
+                background: var(--vscode-button-background);
                 color: var(--vscode-button-foreground);
                 border: none;
-                padding: 6px 14px;
-                border-radius: 2px;
+                border-radius: 4px;
                 cursor: pointer;
-                margin-bottom: 15px;
-                float: right;
             }
-            .clear-btn:hover {
-                background-color: var(--vscode-button-hoverBackground);
+            #sendButton:hover {
+                background: var(--vscode-button-hoverBackground);
+            }
+            .status-bar {
+                padding: 8px 16px;
+                background: var(--vscode-statusBar-background);
+                color: var(--vscode-statusBar-foreground);
+                font-size: 12px;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }
+            .code-block {
+                background: var(--vscode-editor-background);
+                border: 1px solid var(--vscode-panel-border);
+                border-radius: 4px;
+                padding: 12px;
+                margin: 8px 0;
+                font-family: 'Consolas', 'Monaco', monospace;
+                white-space: pre-wrap;
+            }
+            .typing-indicator {
+                display: none;
+                align-self: flex-start;
+                padding: 12px 16px;
+                background: var(--vscode-editor-inactiveSelectionBackground);
+                border-radius: 8px;
+            }
+            .typing-indicator span {
+                display: inline-block;
+                width: 8px;
+                height: 8px;
+                background: var(--vscode-editor-foreground);
+                border-radius: 50%;
+                margin: 0 2px;
+                animation: typing 1s infinite;
+            }
+            .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+            .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+            @keyframes typing {
+                0%, 100% { transform: translateY(0); }
+                50% { transform: translateY(-4px); }
             }
         </style>
     </head>
     <body>
-        <div id="status" class="status disconnected">Disconnected</div>
-        <div id="modelIndicator" class="model-indicator">Model: ...</div>
-        <h2>RealTutor AI Assistant</h2>
-        <button id="clearBtn" class="clear-btn">Clear</button>
-        <div id="responses"></div>
+        <div class="chat-container">
+            <div class="status-bar">
+                <span id="connectionStatus">Connecting...</span>
+                <span id="modelInfo">Model: RealTutor AI</span>
+            </div>
+            <div class="messages" id="messages"></div>
+            <div class="typing-indicator" id="typingIndicator">
+                <span></span>
+                <span></span>
+                <span></span>
+            </div>
+            <div class="input-container">
+                <input type="text" id="messageInput" placeholder="Type your message..." />
+                <button id="sendButton">Send</button>
+            </div>
+        </div>
         <script>
-            (function() {
-                const vscode = acquireVsCodeApi();
-                const responsesDiv = document.getElementById('responses');
-                const statusDiv = document.getElementById('status');
-                const modelIndicator = document.getElementById('modelIndicator');
-                const clearBtn = document.getElementById('clearBtn');
-
-                clearBtn.addEventListener('click', () => {
-                    responsesDiv.innerHTML = '';
-                });
-
-                function setModelIndicator(model) {
-                    modelIndicator.textContent = 'Model: ' + (model === 'openai' ? 'OpenAI (Cloud)' : 'RealTutor AI');
-                }
-
-                function processMessage(message) {
-                    if (message.type === 'response') {
-                        const responseDiv = document.createElement('div');
-                        responseDiv.className = 'response';
-                        if (message.data && message.data.message) {
-                            const content = message.data.message;
-                            const sections = content.split('\\n\\n');
-                            sections.forEach(section => {
-                                if (section.trim()) {
-                                    const p = document.createElement('p');
-                                    p.textContent = section;
-                                    responseDiv.appendChild(p);
-                                }
-                            });
-                            responsesDiv.insertBefore(responseDiv, responsesDiv.firstChild);
+            const vscode = acquireVsCodeApi();
+            const messagesContainer = document.getElementById('messages');
+            const messageInput = document.getElementById('messageInput');
+            const sendButton = document.getElementById('sendButton');
+            const connectionStatus = document.getElementById('connectionStatus');
+            const modelInfo = document.getElementById('modelInfo');
+            const typingIndicator = document.getElementById('typingIndicator');
+            
+            let messageHistory = [];
+            
+            function addMessage(content, isUser = false) {
+                const messageDiv = document.createElement('div');
+                messageDiv.className = \`message \${isUser ? 'user-message' : 'ai-message'}\`;
+                
+                // Check if content contains code blocks
+                if (content.includes('\`\`\`')) {
+                    const parts = content.split('\`\`\`');
+                    parts.forEach((part, index) => {
+                        if (index % 2 === 0) {
+                            // Regular text
+                            messageDiv.appendChild(document.createTextNode(part));
                         } else {
-                            const errorP = document.createElement('p');
-                            errorP.textContent = 'Error: Invalid response from server';
-                            errorP.style.color = 'red';
-                            responseDiv.appendChild(errorP);
-                            responsesDiv.insertBefore(responseDiv, responsesDiv.firstChild);
+                            // Code block
+                            const codeBlock = document.createElement('pre');
+                            codeBlock.className = 'code-block';
+                            codeBlock.textContent = part;
+                            messageDiv.appendChild(codeBlock);
                         }
-                    }
+                    });
+                } else {
+                    messageDiv.textContent = content;
                 }
-
-                window.addEventListener('message', event => {
-                    const message = event.data;
-                    console.log('Webview received message:', message);
-                    if (message.type === 'status') {
-                        var connected = message.data.connected;
-                        var error = message.data.error;
-                        var model = message.data.model;
-                        statusDiv.textContent = connected ? 'Connected' : 'Disconnected';
-                        statusDiv.className = 'status ' + (connected ? 'connected' : 'disconnected');
-                        if (model) setModelIndicator(model);
-                        if (error) {
-                            console.error('Connection error:', error);
+                
+                messagesContainer.appendChild(messageDiv);
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                messageHistory.push({ content, isUser });
+            }
+            
+            function showTypingIndicator() {
+                typingIndicator.style.display = 'block';
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            }
+            
+            function hideTypingIndicator() {
+                typingIndicator.style.display = 'none';
+            }
+            
+            function sendMessage() {
+                const message = messageInput.value.trim();
+                if (message) {
+                    addMessage(message, true);
+                    messageInput.value = '';
+                    showTypingIndicator();
+                    vscode.postMessage({
+                        type: 'userMessage',
+                        data: { message }
+                    });
+                }
+            }
+            
+            sendButton.addEventListener('click', sendMessage);
+            messageInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    sendMessage();
+                }
+            });
+            
+            window.addEventListener('message', event => {
+                const message = event.data;
+                
+                switch (message.type) {
+                    case 'status':
+                        connectionStatus.textContent = message.data.connected ? 'Connected' : 'Disconnected';
+                        connectionStatus.style.color = message.data.connected ? 'var(--vscode-testing-iconPassed)' : 'var(--vscode-testing-iconFailed)';
+                        if (message.data.model) {
+                            modelInfo.textContent = \`Model: \${message.data.model}\`;
                         }
-                    }
-                    else if (message.type === 'response') {
-                        if (message.data && message.data.model) setModelIndicator(message.data.model);
-                        processMessage(message);
-                    }
-                });
-            })();
+                        break;
+                        
+                    case 'response':
+                        hideTypingIndicator();
+                        addMessage(message.data.message);
+                        break;
+                        
+                    case 'error':
+                        hideTypingIndicator();
+                        addMessage(\`Error: \${message.data.message}\`);
+                        break;
+                }
+            });
+            
+            // Request initial status
+            vscode.postMessage({ type: 'getStatus' });
         </script>
     </body>
     </html>`;
