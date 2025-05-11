@@ -13,7 +13,8 @@
     "onStartupFinished",
     "onCommand:realtutor-ai.startTutoring",
     "onCommand:realtutor-ai.analyzeCode",
-    "onCommand:realtutor-ai.openChat"
+    "onCommand:realtutor-ai.openChat",
+    "onCommand:realtutor-ai.clearCache"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -29,6 +30,10 @@
       {
         "command": "realtutor-ai.openChat",
         "title": "RealTutor AI: Open Chat"
+      },
+      {
+        "command": "realtutor-ai.clearCache",
+        "title": "RealTutor AI: Clear Response Cache"
       }
     ],
     "viewsContainers": {

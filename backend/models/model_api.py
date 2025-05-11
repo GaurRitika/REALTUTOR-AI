@@ -49,21 +49,19 @@ def root():
 def analyze():
     data = request.json
     logger.info(f"Received analysis request: {data}")
-    
     try:
-        text = data.get("text", "")
-        error = data.get("error", None)
+        user_message = data.get("userMessage", "")
+        code_context = data.get("codeContext", "")
+        language = data.get("language", "")
         file_name = data.get("fileName", "unknown")
-        
-        if error:
-            # Use your model's error explanation
-            logger.info(f"Explaining error: {error}")
-            response = explain_coding_error(text, error)
-        else:
-            # Use inactivity suggestion
-            logger.info(f"Providing help for file: {file_name}")
-            response = provide_help_on_inactivity(text, file_name, recent_edits="")
-        
+
+        logger.info(f"User message: {user_message}")
+        logger.info(f"File: {file_name}, Language: {language}")
+        logger.info(f"Code context length: {len(code_context)}")
+
+        # Use the new context-aware function
+        response = answer_coding_question(code_context, file_name, user_message)
+
         result = {
             "type": "response",
             "data": {
@@ -71,7 +69,7 @@ def analyze():
                 "model": "realtutor-ai"
             }
         }
-        logger.info("Successfully generated response")
+        logger.info("Successfully generated context-aware response")
         return jsonify(result)
     except Exception as e:
         logger.error(f"Error processing analysis: {e}")

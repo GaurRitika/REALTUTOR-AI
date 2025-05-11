@@ -44,11 +44,10 @@ class RealTutorAI:
         self.question_prompt = ChatPromptTemplate.from_messages([
             (
                 "system",
-                """You are RealTutor AI, a helpful coding assistant. Answer the user's question
-                clearly and in a beginner-friendly way. Provide examples when appropriate.
-                
-                User's code context: {code_context}
-                Current file: {current_file}"""
+                """You are RealTutor AI, a helpful coding assistant. \
+Answer the user's question about the code below. \
+Always reference the code context and filename. \
+If the question is about a function, variable, or logic, look for it in the code context and explain in detail.\n\nUser's code context (from file: {current_file}):\n-----------------\n{code_context}\n-----------------\n\nUser's question: {user_question}\n"""
             ),
             ('human', '{user_question}')
         ])

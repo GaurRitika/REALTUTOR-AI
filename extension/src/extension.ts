@@ -1,6 +1,45 @@
 import * as vscode from 'vscode';
+import * as crypto from 'crypto';
 
-// Helper function for HTTP requests
+// Cache interface
+interface CacheEntry {
+    response: any;
+    timestamp: number;
+    hash: string;
+}
+
+// Cache configuration
+const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+const MAX_CACHE_SIZE = 1000; // Maximum number of cache entries
+
+// Cache storage
+let responseCache: Map<string, CacheEntry> = new Map();
+
+// Helper function to generate cache key
+function generateCacheKey(data: any): string {
+    const content = JSON.stringify(data);
+    return crypto.createHash('sha256').update(content).digest('hex');
+}
+
+// Helper function to clean old cache entries
+function cleanCache() {
+    const now = Date.now();
+    for (const [key, entry] of responseCache.entries()) {
+        if (now - entry.timestamp > CACHE_DURATION) {
+            responseCache.delete(key);
+        }
+    }
+    
+    // If still too many entries, remove oldest ones
+    if (responseCache.size > MAX_CACHE_SIZE) {
+        const entries = Array.from(responseCache.entries());
+        entries.sort((a, b) => a[1].timestamp - b[1].timestamp);
+        const entriesToRemove = entries.slice(0, entries.length - MAX_CACHE_SIZE);
+        entriesToRemove.forEach(([key]) => responseCache.delete(key));
+    }
+}
+
+// Helper function for HTTP requests with caching
 async function fetchWithTimeout(url: string, options: RequestInit, timeout = 5000): Promise<Response> {
     const controller = new AbortController();
     const id = setTimeout(() => controller.abort(), timeout);
@@ -44,15 +83,15 @@ export function activate(context: vscode.ExtensionContext) {
             switch (message.type) {
                 case 'userMessage':
                     if (isConnected) {
+                        // Always send code context with every chat message
                         const editor = vscode.window.activeTextEditor;
                         const context = editor ? {
-                            text: editor.document.getText(),
+                            codeContext: editor.document.getText(),
                             language: editor.document.languageId,
                             fileName: editor.document.fileName
                         } : {};
-                        
                         await sendAnalysisRequest({
-                            text: message.data.message,
+                            userMessage: message.data.message,
                             ...context
                         });
                     } else {
@@ -62,7 +101,6 @@ export function activate(context: vscode.ExtensionContext) {
                         });
                     }
                     break;
-                    
                 case 'getStatus':
                     checkServerStatus();
                     break;
@@ -70,9 +108,22 @@ export function activate(context: vscode.ExtensionContext) {
         });
     }
 
-    // Use HTTP instead of WebSocket
+    // Use HTTP instead of WebSocket with caching
     async function sendAnalysisRequest(data: any) {
         try {
+            // Generate cache key
+            const cacheKey = generateCacheKey(data);
+            
+            // Check cache first
+            const cachedEntry = responseCache.get(cacheKey);
+            if (cachedEntry) {
+                console.log("Cache hit for request");
+                if (tutorPanel) {
+                    tutorPanel.webview.postMessage(cachedEntry.response);
+                }
+                return true;
+            }
+
             console.log("Sending analysis request to http://localhost:3001/analyze");
             
             const response = await fetchWithTimeout('http://localhost:3001/analyze', {
@@ -89,6 +140,16 @@ export function activate(context: vscode.ExtensionContext) {
             
             const result = await response.json();
             console.log("Received response:", result);
+            
+            // Cache the response
+            responseCache.set(cacheKey, {
+                response: result,
+                timestamp: Date.now(),
+                hash: cacheKey
+            });
+            
+            // Clean old cache entries
+            cleanCache();
             
             if (tutorPanel) {
                 tutorPanel.webview.postMessage(result);
@@ -301,11 +362,40 @@ export function activate(context: vscode.ExtensionContext) {
         }
     });
 
+    // Add cache status to status bar
+    function updateCacheStatus() {
+        const cacheSize = responseCache.size;
+        const cacheStatus = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+        cacheStatus.text = `$(database) Cache: ${cacheSize}/${MAX_CACHE_SIZE}`;
+        cacheStatus.tooltip = 'RealTutor AI Response Cache';
+        cacheStatus.show();
+        return cacheStatus;
+    }
+
+    const cacheStatus = updateCacheStatus();
+
+    // Update cache status every minute
+    const cacheStatusInterval = setInterval(() => {
+        cacheStatus.text = `$(database) Cache: ${responseCache.size}/${MAX_CACHE_SIZE}`;
+    }, 60000);
+
+    // Add cache clear command
+    let clearCacheCommand = vscode.commands.registerCommand('realtutor-ai.clearCache', () => {
+        responseCache.clear();
+        vscode.window.showInformationMessage('RealTutor AI cache cleared');
+        cacheStatus.text = `$(database) Cache: 0/${MAX_CACHE_SIZE}`;
+    });
+
     context.subscriptions.push(
         disposable, 
         analyzeCommand, 
-        chatCommandDisposable, 
-        { dispose: () => clearInterval(statusInterval) }
+        chatCommandDisposable,
+        clearCacheCommand,
+        cacheStatus,
+        { dispose: () => {
+            clearInterval(statusInterval);
+            clearInterval(cacheStatusInterval);
+        }}
     );
 }
 
