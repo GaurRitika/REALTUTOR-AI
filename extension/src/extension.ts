@@ -108,6 +108,17 @@ export function activate(context: vscode.ExtensionContext) {
                     // For now, just show a notification. In the future, you can log this to a file or server.
                     vscode.window.showInformationMessage(`Feedback received: ${message.data.feedback === 'up' ? 'Helpful' : 'Not Helpful'}`);
                     break;
+                case 'insertCode':
+                    const editor = vscode.window.activeTextEditor;
+                    if (editor) {
+                        editor.edit(editBuilder => {
+                            editBuilder.insert(editor.selection.active, message.data.code);
+                        });
+                        vscode.window.showInformationMessage('Code inserted into editor!');
+                    } else {
+                        vscode.window.showErrorMessage('No active editor to insert code.');
+                    }
+                    break;
             }
         });
     }
@@ -564,6 +575,16 @@ function getWebviewContent() {
                             codeBlock.className = 'code-block';
                             codeBlock.textContent = part;
                             messageDiv.appendChild(codeBlock);
+
+                            // Insert into Editor button
+                            const insertBtn = document.createElement('button');
+                            insertBtn.textContent = 'Insert into Editor';
+                            insertBtn.style.marginLeft = '8px';
+                            insertBtn.style.cursor = 'pointer';
+                            insertBtn.onclick = () => {
+                                vscode.postMessage({ type: 'insertCode', data: { code: part } });
+                            };
+                            messageDiv.appendChild(insertBtn);
                         }
                     });
                 } else {
