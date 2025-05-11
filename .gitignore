@@ -5,6 +5,15 @@ yarn-debug.log
 yarn-error.log
 .pnpm-debug.log
 
+
+# .gitignore
+node_modules/
+.env
+*.vsix
+out/
+dist/
+
+backend/models/venv/
 # Build output
 extension/out/
 *.vsix

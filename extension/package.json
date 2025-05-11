@@ -11,7 +11,8 @@
   ],
   "activationEvents": [
     "onStartupFinished",
-    "onCommand:realtutor-ai.startTutoring"
+    "onCommand:realtutor-ai.startTutoring",
+    "onCommand:realtutor-ai.analyzeCode"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -19,6 +20,10 @@
       {
         "command": "realtutor-ai.startTutoring",
         "title": "Start RealTutor AI"
+      },
+      {
+        "command": "realtutor-ai.analyzeCode",
+        "title": "RealTutor AI: Analyze Code"
       }
     ],
     "viewsContainers": {
@@ -46,6 +51,13 @@
           "when": "view == realtutor-ai.tutorView",
           "group": "navigation"
         }
+      ],
+      "editor/context": [
+        {
+          "command": "realtutor-ai.analyzeCode",
+          "when": "editorTextFocus",
+          "group": "navigation"
+        }
       ]
     }
   },
@@ -58,14 +70,16 @@
     "test": "node ./out/test/runTest.js"
   },
   "devDependencies": {
-    "@types/vscode": "^1.60.0",
     "@types/node": "^16.11.7",
+    "@types/vscode": "^1.60.0",
+    "@types/ws": "^8.18.1",
     "@typescript-eslint/eslint-plugin": "^5.30.0",
     "@typescript-eslint/parser": "^5.30.0",
     "eslint": "^8.13.0",
     "typescript": "^4.7.2"
   },
   "dependencies": {
+    "cross-fetch": "^3.2.0",
     "ws": "^8.13.0"
   }
 }
