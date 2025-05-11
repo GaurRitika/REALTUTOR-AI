@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import * as crypto from 'crypto';
+import * as path from 'path';
 
 // Cache interface
 interface CacheEntry {
@@ -51,6 +52,25 @@ async function fetchWithTimeout(url: string, options: RequestInit, timeout = 500
     return response;
 }
 
+// Helper to get all files in the workspace with contents (limit to 20 files, 100KB total)
+async function getProjectFilesWithContents(): Promise<{ filename: string, content: string }[]> {
+    const files = await vscode.workspace.findFiles('**/*.{js,jsx,ts,tsx,py,java,cpp,c,h,cs,go,rb,php,html,css,scss,md,json}', '**/node_modules/**', 20);
+    let totalSize = 0;
+    const result: { filename: string, content: string }[] = [];
+    for (const file of files) {
+        try {
+            const doc = await vscode.workspace.openTextDocument(file);
+            const content = doc.getText();
+            totalSize += content.length;
+            if (totalSize > 100000) break; // 100KB limit
+            result.push({ filename: vscode.workspace.asRelativePath(file), content });
+        } catch (e) {
+            // Ignore files that can't be read
+        }
+    }
+    return result;
+}
+
 export function activate(context: vscode.ExtensionContext) {
     let tutorPanel: vscode.WebviewPanel | undefined;
     let lastActivityTime = Date.now();
@@ -84,11 +104,11 @@ export function activate(context: vscode.ExtensionContext) {
                 case 'userMessage':
                     if (isConnected) {
                         // Always send code context with every chat message
-                        const editor = vscode.window.activeTextEditor;
-                        const context = editor ? {
-                            codeContext: editor.document.getText(),
-                            language: editor.document.languageId,
-                            fileName: editor.document.fileName
+                        const activeeditor = vscode.window.activeTextEditor;
+                        const context = activeeditor ? {
+                            codeContext: activeeditor.document.getText(),
+                            language: activeeditor.document.languageId,
+                            fileName: activeeditor.document.fileName
                         } : {};
                         await sendAnalysisRequest({
                             userMessage: message.data.message,
@@ -109,14 +129,40 @@ export function activate(context: vscode.ExtensionContext) {
                     vscode.window.showInformationMessage(`Feedback received: ${message.data.feedback === 'up' ? 'Helpful' : 'Not Helpful'}`);
                     break;
                 case 'insertCode':
-                    const editor = vscode.window.activeTextEditor;
-                    if (editor) {
-                        editor.edit(editBuilder => {
-                            editBuilder.insert(editor.selection.active, message.data.code);
+                    const codeeditor = vscode.window.activeTextEditor;
+                    if (codeeditor) {
+                        codeeditor.edit(editBuilder => {
+                            editBuilder.insert(codeeditor.selection.active, message.data.code);
                         });
                         vscode.window.showInformationMessage('Code inserted into editor!');
                     } else {
                         vscode.window.showErrorMessage('No active editor to insert code.');
+                    }
+                    break;
+                case 'analyzeProject':
+                    const filesDetailed = await getProjectFilesWithContents();
+                    await sendAnalysisRequest({
+                        userMessage: 'Analyze my project and suggest improvements or issues.',
+                        projectFilesDetailed: filesDetailed
+                    });
+                    vscode.window.showInformationMessage('Project analysis (with file contents) sent to RealTutor AI!');
+                    break;
+                case 'clearCache':
+                    responseCache.clear();
+                    vscode.window.showInformationMessage('RealTutor AI cache cleared');
+                    break;
+                case 'refreshContext':
+                    const contexteditor = vscode.window.activeTextEditor;
+                    if (contexteditor) {
+                        await sendAnalysisRequest({
+                            userMessage: 'Refresh code context',
+                            codeContext: contexteditor.document.getText(),
+                            language: contexteditor.document.languageId,
+                            fileName: contexteditor.document.fileName
+                        });
+                        vscode.window.showInformationMessage('Code context refreshed!');
+                    } else {
+                        vscode.window.showErrorMessage('No active editor to refresh context.');
                     }
                     break;
             }
@@ -405,12 +451,38 @@ export function activate(context: vscode.ExtensionContext) {
         cacheStatus.text = `$(database) Cache: 0/${MAX_CACHE_SIZE}`;
     });
 
+    // Add command to analyze project
+    let analyzeProjectCommand = vscode.commands.registerCommand('realtutor-ai.analyzeProject', async () => {
+        const filesDetailed = await getProjectFilesWithContents();
+        if (filesDetailed.length === 0) {
+            vscode.window.showWarningMessage('No project files found.');
+            return;
+        }
+        // Send project context to backend
+        await sendAnalysisRequest({
+            userMessage: 'Analyze my project and suggest improvements or issues.',
+            projectFilesDetailed: filesDetailed
+        });
+        vscode.window.showInformationMessage('Project analysis (with file contents) sent to RealTutor AI!');
+    });
+
+    // Make activity bar icon always open/focus the chat panel
+    let activityBarDisposable = vscode.commands.registerCommand('realtutor-ai.focusTutorPanel', () => {
+        if (!tutorPanel) {
+            createTutorPanel();
+        } else {
+            tutorPanel.reveal();
+        }
+    });
+
     context.subscriptions.push(
         disposable, 
         analyzeCommand, 
         chatCommandDisposable,
         clearCacheCommand,
         cacheStatus,
+        analyzeProjectCommand,
+        activityBarDisposable,
         { dispose: () => {
             clearInterval(statusInterval);
             clearInterval(cacheStatusInterval);
@@ -432,6 +504,23 @@ function getWebviewContent() {
                 margin: 0;
                 background: var(--vscode-editor-background);
                 color: var(--vscode-editor-foreground);
+            }
+            .toolbar {
+                display: flex;
+                gap: 12px;
+                margin-bottom: 12px;
+                align-items: center;
+            }
+            .toolbar button {
+                padding: 6px 14px;
+                border-radius: 4px;
+                border: none;
+                background: var(--vscode-button-background);
+                color: var(--vscode-button-foreground);
+                cursor: pointer;
+            }
+            .toolbar button:hover {
+                background: var(--vscode-button-hoverBackground);
             }
             .chat-container {
                 display: flex;
@@ -531,6 +620,11 @@ function getWebviewContent() {
         </style>
     </head>
     <body>
+        <div class="toolbar">
+            <button id="clearCacheBtn">Clear Cache</button>
+            <button id="analyzeProjectBtn">Analyze Project</button>
+            <button id="refreshContextBtn">Refresh Code Context</button>
+        </div>
         <div class="chat-container">
             <div class="status-bar">
                 <span id="connectionStatus">Connecting...</span>
@@ -621,6 +715,16 @@ function getWebviewContent() {
                     feedbackDiv.appendChild(thumbsUp);
                     feedbackDiv.appendChild(thumbsDown);
                     messageDiv.appendChild(feedbackDiv);
+
+                    // Add project analysis button
+                    const analyzeBtn = document.createElement('button');
+                    analyzeBtn.textContent = 'Analyze Project';
+                    analyzeBtn.style.marginLeft = '8px';
+                    analyzeBtn.style.cursor = 'pointer';
+                    analyzeBtn.onclick = async () => {
+                        vscode.postMessage({ type: 'analyzeProject' });
+                    };
+                    messageDiv.appendChild(analyzeBtn);
                 }
                 
                 messagesContainer.appendChild(messageDiv);
@@ -683,6 +787,11 @@ function getWebviewContent() {
             
             // Request initial status
             vscode.postMessage({ type: 'getStatus' });
+
+            // Toolbar button handlers
+            document.getElementById('clearCacheBtn').onclick = () => vscode.postMessage({ type: 'clearCache' });
+            document.getElementById('analyzeProjectBtn').onclick = () => vscode.postMessage({ type: 'analyzeProject' });
+            document.getElementById('refreshContextBtn').onclick = () => vscode.postMessage({ type: 'refreshContext' });
         </script>
     </body>
     </html>`;
