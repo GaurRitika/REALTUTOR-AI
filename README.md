@@ -1,95 +1,127 @@
-# RealTutor AI
+RealTutor AI - VS Code Extension
+Overview
+RealTutor AI is an intelligent coding assistant that provides real-time help and guidance as you code. Unlike static code assistants, RealTutor AI actively monitors your coding activity and provides contextual assistance when you need it most.
 
-A VS Code extension that provides real-time AI-powered coding assistance and tutoring.
+Developed by: Ritika Gaur
 
-## Features
+Features
+1.Live, Context-Aware AI Assistant: Watches your real-time coding activity and detects when you're stuck or paused
+2.Human-Like Explanations: Uses advanced AI models to explain errors in simple, beginner-friendly language
+3.Smart Triggering: Automatically responds when needed - on long pauses or error detection
+4.Seamless Integration: Runs inside VS Code with a dedicated panel for AI responses
+5.Full Stack Architecture: Real-time communication between extension and backend via HTTP API
+6.Perfect for Learners: Ideal for students, self-taught developers, or coders working without a 
+ mentor
 
-- Real-time code monitoring
-- Automatic assistance when you pause or encounter errors
-- AI-powered explanations and suggestions
-- Clean, integrated UI within VS Code
+ 
+Installation
+Prerequisites
+1.Visual Studio Code (version 1.60.0 or higher)
+2.Python 3.8+ with pip
+3.Node.js and npm
 
-## Project Structure
+Backend Setup
+.Clone the repository:
+git clone https://github.com/GaurRitika/REALTUTOR-AI/edit/main/README.md
+cd realtutor-ai/backend
 
-```
+Create and activate a virtual environment:
+# Windows
+python -m venv venv
+venv\Scripts\activate
+
+# macOS/Linux
+python -m venv venv
+source venv/bin/activate
+
+Install the required Python packages:
+pip install -r requirements.txt
+
+Create a .env file in the backend/models directory with your Groq API key:
+GROQ_API_KEY=your_api_key_here
+
+Start the backend server:
+cd models
+venv\scripts\activate
+python model_api.py
+
+
+Extension Setup
+Navigate to the extension directory:
+cd ../extension
+
+Install the required npm packages:
+npm install
+
+Compile the extension:
+npm run compile
+
+Launch the extension in development mode:
+1.Press F5 in VS Code with the extension folder open
+2.Or select "Run Extension" from the Debug menu
+
+Usage
+1.Once the extension is running, you'll see the RealTutor AI icon in the Activity Bar.
+2.Click on the icon to open the RealTutor AI panel.
+3.The panel will automatically connect to the backend server.
+4.Start coding, and RealTutor AI will provide assistance in these scenarios:
+   1.When you pause for more than 5 seconds on a piece of code
+   2.When syntax or compilation errors are detected
+   3.When you manually select code and choose "RealTutor AI: Analyze Code"
+   
+Commands
+1.Start RealTutor AI: Activates the RealTutor AI panel
+2.RealTutor AI: Analyze Code: Manually analyze selected code or the current file
+
+Project Structure
+
 realtutor-ai/
-├── extension/           # VS Code extension
-│   ├── src/
-│   │   └── extension.ts # Main extension code
-│   └── package.json     # Extension dependencies
-└── backend/            # WebSocket server
+├── backend/
+│   ├── models/
+│   │   ├── model_api.py         # Main server file with Flask and WebSocket
+│   │   ├── realtutor_ai_model.py # AI model integration
+│   │   └── .env                 # Environment variables (API keys)
+│   └── requirements.txt         # Python dependencies
+└── extension/
     ├── src/
-    │   └── server.js   # Backend server code
-    └── package.json    # Backend dependencies
-```
+    │   └── extension.ts         # Main extension code
+    ├── package.json             # Extension metadata and dependencies
+    └── tsconfig.json            # TypeScript configuration
 
-## Setup Instructions
+    
+Technical Details
 
-### Backend Setup
+Backend
+1.Flask: HTTP server for API endpoints
+2.WebSockets: For real-time communication (optional)
+3.Groq API: Powers the AI model responses
+4.LangChain: Framework for working with language models
 
-1. Navigate to the backend directory:
-   ```bash
-   cd backend
-   ```
+Extension
+1.TypeScript: Main programming language for the extension
+2.VS Code API: Integration with editor features
+3.Webview API: For displaying the AI assistant panel
 
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
+Customization
+You can customize the behavior of RealTutor AI by modifying:
+1.The prompts in realtutor_ai_model.py to adjust the AI's responses
+2.The inactivity threshold in extension.ts (default: 5000ms)
+3.The model used in realtutor_ai_model.py (default: deepseek-r1-distill-llama-70b)
 
-3. Create a `.env` file in the backend directory with your OpenAI API key:
-   ```
-   OPENAI_API_KEY=your_openai_api_key_here
-   ```
 
-4. Start the backend server:
-   ```bash
-   npm run dev
-   ```
+Troubleshooting
+1.Extension not connecting to server: Ensure the backend server is running on port 3001
+2.No AI responses: Check if your API key is valid and properly set in the .env file
+3.Errors in console: Check the Output panel in VS Code for detailed error messages
 
-### Extension Setup
+Contributing
+Contributions are welcome! Please feel free to submit a Pull Request.It will really means a lot❤️❤️
 
-1. Navigate to the extension directory:
-   ```bash
-   cd extension
-   ```
+License
+This project is licensed under the MIT License - see the LICENSE file for details.
 
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
+Contact
+For questions or support, please contact:
 
-3. Compile the extension:
-   ```bash
-   npm run compile
-   ```
-
-4. Press F5 in VS Code to start debugging the extension
-
-## Usage
-
-1. Start the backend server first
-2. Install and activate the VS Code extension
-3. Open the Command Palette (Ctrl+Shift+P)
-4. Type "Start RealTutor AI" and press Enter
-5. The AI tutor panel will appear on the right side of VS Code
-6. Start coding - the AI will automatically provide assistance when you pause or encounter issues
-
-## Development
-
-- The extension uses TypeScript and the VS Code Extension API
-- The backend uses Node.js with WebSocket for real-time communication
-- OpenAI's GPT-4 is used for generating responses
-
-## Requirements
-
-- VS Code 1.60.0 or higher
-- Node.js 14.x or higher
-- OpenAI API key
-
-## License
-
-MIT 
-
-author - devritika.gaur@gmail.com
-2changes in files 1 in server.js and extension.ts
+Ritika Gaur: devritika.gaur@gmail.com
+Happy coding with your new AI assistant!
