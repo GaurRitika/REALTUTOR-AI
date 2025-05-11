@@ -1,4 +1,6 @@
 RealTutor AI - VS Code Extension
+![Uploading Screenshot 2025-05-11 165747.png…]()
+
 Overview
 RealTutor AI is an intelligent coding assistant that provides real-time help and guidance as you code. Unlike static code assistants, RealTutor AI actively monitors your coding activity and provides contextual assistance when you need it most.
 
