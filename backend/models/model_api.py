@@ -54,13 +54,18 @@ def analyze():
         code_context = data.get("codeContext", "")
         language = data.get("language", "")
         file_name = data.get("fileName", "unknown")
+        project_files = data.get("projectFilesDetailed", [])
 
-        logger.info(f"User message: {user_message}")
-        logger.info(f"File: {file_name}, Language: {language}")
-        logger.info(f"Code context length: {len(code_context)}")
-
-        # Use the new context-aware function
-        response = answer_coding_question(code_context, file_name, user_message)
+        if project_files:
+            # Join all file contents for the model (truncate each file to 2000 chars for safety)
+            files_summary = "\n\n".join(
+                f"File: {f['filename']}\n{f['content'][:2000]}" for f in project_files if 'filename' in f and 'content' in f
+            )
+            response = answer_coding_question(
+                files_summary, "PROJECT", user_message or "Analyze the project and suggest improvements or issues."
+            )
+        else:
+            response = answer_coding_question(code_context, file_name, user_message)
 
         result = {
             "type": "response",
