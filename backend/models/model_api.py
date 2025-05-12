@@ -6,8 +6,7 @@ import json
 import os
 import logging
 import threading
-from flask_cors import CORS  # Add this import
-
+from flask_cors import CORS
 
 app = Flask(__name__)
 CORS(app)
@@ -57,15 +56,30 @@ def analyze():
         project_files = data.get("projectFilesDetailed", [])
 
         if project_files:
-            # Join all file contents for the model (truncate each file to 2000 chars for safety)
-            files_summary = "\n\n".join(
-                f"File: {f['filename']}\n{f['content'][:2000]}" for f in project_files if 'filename' in f and 'content' in f
-            )
+            # Enhanced project analysis with language detection
+            files_summary = []
+            for f in project_files:
+                if 'filename' in f and 'content' in f:
+                    # Detect language from file extension
+                    file_lang = detect_language_from_filename(f['filename'])
+                    files_summary.append(
+                        f"File: {f['filename']} (Language: {file_lang})\n{f['content'][:2000]}"
+                    )
+            
+            files_summary_text = "\n\n".join(files_summary)
             response = answer_coding_question(
-                files_summary, "PROJECT", user_message or "Analyze the project and suggest improvements or issues."
+                files_summary_text,
+                "PROJECT",
+                user_message or "Analyze the project and suggest improvements or issues.",
+                language
             )
         else:
-            response = answer_coding_question(code_context, file_name, user_message)
+            response = answer_coding_question(
+                code_context,
+                file_name,
+                user_message,
+                language
+            )
 
         result = {
             "type": "response",
@@ -86,6 +100,43 @@ def analyze():
             }
         })
 
+def detect_language_from_filename(filename: str) -> str:
+    """Detect programming language from file extension"""
+    ext = filename.lower().split('.')[-1]
+    language_map = {
+        'py': 'Python',
+        'js': 'JavaScript',
+        'ts': 'TypeScript',
+        'jsx': 'React',
+        'tsx': 'React TypeScript',
+        'html': 'HTML',
+        'css': 'CSS',
+        'java': 'Java',
+        'cpp': 'C++',
+        'c': 'C',
+        'cs': 'C#',
+        'go': 'Go',
+        'rb': 'Ruby',
+        'php': 'PHP',
+        'swift': 'Swift',
+        'kt': 'Kotlin',
+        'rs': 'Rust',
+        'scala': 'Scala',
+        'pl': 'Perl',
+        'sh': 'Shell',
+        'sql': 'SQL',
+        'md': 'Markdown',
+        'json': 'JSON',
+        'xml': 'XML',
+        'yaml': 'YAML',
+        'yml': 'YAML',
+        'toml': 'TOML',
+        'ini': 'INI',
+        'env': 'Environment',
+        'txt': 'Text'
+    }
+    return language_map.get(ext, 'Unknown')
+
 async def process_code_analysis(data):
     code = data.get("text", "")
     language = data.get("language", "")
@@ -94,11 +145,11 @@ async def process_code_analysis(data):
     
     try:
         if error:
-            # Use your model's error explanation
-            response = explain_coding_error(code, error)
+            # Use enhanced error explanation with language context
+            response = explain_coding_error(code, error, language, file_name)
         else:
-            # Use inactivity suggestion
-            response = provide_help_on_inactivity(code, file_name, recent_edits="")
+            # Use enhanced inactivity suggestion with language context
+            response = provide_help_on_inactivity(code, file_name, "", language)
         
         return {
             "type": "response",
@@ -183,10 +234,11 @@ def status():
 def generate():
     data = request.json
     prompt = data.get('prompt', '')
+    language = data.get('language', '')
     
     try:
-        # Use your model to generate a response
-        response = answer_coding_question(prompt, "", "")
+        # Use enhanced question answering with language context
+        response = answer_coding_question(prompt, "", "", language)
         return jsonify({'response': response})
     except Exception as e:
         logger.error(f"Error generating response: {e}")

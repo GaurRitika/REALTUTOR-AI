@@ -53,17 +53,21 @@ async function fetchWithTimeout(url: string, options: RequestInit, timeout = 500
 }
 
 // Helper to get all files in the workspace with contents (limit to 20 files, 100KB total)
-async function getProjectFilesWithContents(): Promise<{ filename: string, content: string }[]> {
+async function getProjectFilesWithContents(): Promise<{ filename: string, content: string, language: string }[]> {
     const files = await vscode.workspace.findFiles('**/*.{js,jsx,ts,tsx,py,java,cpp,c,h,cs,go,rb,php,html,css,scss,md,json}', '**/node_modules/**', 20);
     let totalSize = 0;
-    const result: { filename: string, content: string }[] = [];
+    const result: { filename: string, content: string, language: string }[] = [];
     for (const file of files) {
         try {
             const doc = await vscode.workspace.openTextDocument(file);
             const content = doc.getText();
             totalSize += content.length;
             if (totalSize > 100000) break; // 100KB limit
-            result.push({ filename: vscode.workspace.asRelativePath(file), content });
+            result.push({
+                filename: vscode.workspace.asRelativePath(file),
+                content,
+                language: doc.languageId
+            });
         } catch (e) {
             // Ignore files that can't be read
         }
@@ -172,52 +176,61 @@ export function activate(context: vscode.ExtensionContext) {
     // Use HTTP instead of WebSocket with caching
     async function sendAnalysisRequest(data: any, retryCount = 0): Promise<boolean> {
         try {
-            // Generate cache key
             const cacheKey = generateCacheKey(data);
+            const cachedResponse = responseCache.get(cacheKey);
             
-            // Check cache first
-            const cachedEntry = responseCache.get(cacheKey);
-            if (cachedEntry) {
-                console.log("Cache hit for request");
+            if (cachedResponse && Date.now() - cachedResponse.timestamp < CACHE_DURATION) {
                 if (tutorPanel) {
-                    tutorPanel.webview.postMessage(cachedEntry.response);
+                    tutorPanel.webview.postMessage({
+                        type: 'response',
+                        data: {
+                            message: cachedResponse.response,
+                            model: 'realtutor-ai'
+                        }
+                    });
                 }
                 return true;
             }
 
-            console.log("Sending analysis request to http://localhost:3001/analyze");
-            
             const response = await fetchWithTimeout('http://localhost:3001/analyze', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify(data)
-            }, 10000);
-            
+                body: JSON.stringify({
+                    ...data,
+                    language: data.language || vscode.window.activeTextEditor?.document.languageId || ''
+                })
+            }, 30000);
+
             if (!response.ok) {
                 throw new Error(`HTTP error! Status: ${response.status}`);
             }
-            
+
             const result = await response.json();
-            console.log("Received response:", result);
             
             // Cache the response
             responseCache.set(cacheKey, {
-                response: result,
+                response: result.data.message,
                 timestamp: Date.now(),
                 hash: cacheKey
             });
-            
-            // Clean old cache entries
-            cleanCache();
-            
-            if (tutorPanel) {
-                // Generate a unique messageId for feedback
-                const messageId = Date.now() + Math.random().toString(36).substring(2, 8);
-                tutorPanel.webview.postMessage({ ...result, messageId });
+
+            // Enforce cache size limit
+            if (responseCache.size > MAX_CACHE_SIZE) {
+                const oldestKey = responseCache.keys().next().value;
+                responseCache.delete(oldestKey);
             }
-            
+
+            if (tutorPanel) {
+                tutorPanel.webview.postMessage({
+                    type: 'response',
+                    data: {
+                        message: result.data.message,
+                        model: result.data.model || 'realtutor-ai'
+                    }
+                });
+            }
             return true;
         } catch (error) {
             if (retryCount < 2) {
@@ -231,7 +244,7 @@ export function activate(context: vscode.ExtensionContext) {
                 tutorPanel.webview.postMessage({ 
                     type: 'error', 
                     data: { 
-               message: (error as Error)?.message || 'Server not responding. Please try again later.'
+                        message: (error as Error)?.message || 'Server not responding. Please try again later.'
                     } 
                 });
             }
