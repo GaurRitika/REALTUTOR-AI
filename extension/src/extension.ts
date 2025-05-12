@@ -192,6 +192,13 @@ export function activate(context: vscode.ExtensionContext) {
                 return true;
             }
 
+            let language = 'plaintext';
+            if (data.language) {
+                language = data.language;
+            } else if (vscode.window.activeTextEditor) {
+                language = vscode.window.activeTextEditor.document.languageId;
+            }
+
             const response = await fetchWithTimeout('http://localhost:3001/analyze', {
                 method: 'POST',
                 headers: {
@@ -199,7 +206,7 @@ export function activate(context: vscode.ExtensionContext) {
                 },
                 body: JSON.stringify({
                     ...data,
-                    language: data.language || vscode.window.activeTextEditor?.document.languageId || ''
+                    language
                 })
             }, 30000);
 
@@ -216,10 +223,12 @@ export function activate(context: vscode.ExtensionContext) {
                 hash: cacheKey
             });
 
-            // Enforce cache size limit
+            // Enforce cache size limit (linter-safe)
             if (responseCache.size > MAX_CACHE_SIZE) {
                 const oldestKey = responseCache.keys().next().value;
-                responseCache.delete(oldestKey);
+                if (oldestKey !== undefined) {
+                    responseCache.delete(oldestKey);
+                }
             }
 
             if (tutorPanel) {
@@ -487,6 +496,60 @@ export function activate(context: vscode.ExtensionContext) {
             tutorPanel.reveal();
         }
     });
+
+    // Register CodeActionProvider for inline AI suggestions
+    const supportedLanguages = [
+        'javascript',
+        'typescript',
+        'python',
+        'javascriptreact',   // for .jsx
+        'typescriptreact'    // for .tsx
+    ];
+
+    class RealTutorAICodeActionProvider implements vscode.CodeActionProvider {
+        provideCodeActions(document: vscode.TextDocument, range: vscode.Range | vscode.Selection, context: vscode.CodeActionContext, token: vscode.CancellationToken): vscode.CodeAction[] | undefined {
+            // Only show if there is a selection or cursor is on a line
+            if (range.isEmpty && !context.diagnostics.length) {
+                return;
+            }
+            const action = new vscode.CodeAction('Ask RealTutor AI for suggestion', vscode.CodeActionKind.QuickFix);
+            action.command = {
+                title: 'Ask RealTutor AI for suggestion',
+                command: 'realtutor-ai.askForSuggestion',
+                arguments: [document, range]
+            };
+            return [action];
+        }
+    }
+
+    // Register the provider for supported languages
+    for (const lang of supportedLanguages) {
+        context.subscriptions.push(
+            vscode.languages.registerCodeActionsProvider(
+                { language: lang },
+                new RealTutorAICodeActionProvider(),
+                { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] }
+            )
+        );
+    }
+
+    // Register the command that handles the code action
+    context.subscriptions.push(
+        vscode.commands.registerCommand('realtutor-ai.askForSuggestion', async (document: vscode.TextDocument, range: vscode.Range) => {
+            const code = document.getText(range);
+            if (!code.trim()) {
+                vscode.window.showInformationMessage('No code selected for AI suggestion.');
+                return;
+            }
+            vscode.window.showInformationMessage('Requesting AI suggestion...');
+            await sendAnalysisRequest({
+                userMessage: 'Suggest improvements or fixes for the following code:',
+                codeContext: code,
+                language: document.languageId,
+                fileName: document.fileName
+            });
+        })
+    );
 
     context.subscriptions.push(
         disposable, 
@@ -852,7 +915,6 @@ function getWebviewContent() {
         </script>
     </body>
     </html>`;
-
 }
 
 export function deactivate() {}
