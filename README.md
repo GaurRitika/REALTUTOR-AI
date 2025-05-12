@@ -1,6 +1,7 @@
 # RealTutor AI - VS Code Extension
 
-![Screenshot 2025-05-11 165747](https://github.com/user-attachments/assets/9f270151-8a72-4037-838e-1f0bb96ed1c3)
+![image](https://github.com/user-attachments/assets/f43b93e3-e30a-4866-a687-9a0f1cf64da7)
+
 
 ## Overview
 
