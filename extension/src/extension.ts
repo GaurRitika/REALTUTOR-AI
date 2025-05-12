@@ -475,6 +475,19 @@ export function activate(context: vscode.ExtensionContext) {
         }
     });
 
+    // Auto-refresh code context on file switch or editor change
+    vscode.window.onDidChangeActiveTextEditor(async (editor) => {
+        if (editor && tutorPanel) {
+            await sendAnalysisRequest({
+                userMessage: 'Auto-refresh code context (file switched)',
+                codeContext: editor.document.getText(),
+                language: editor.document.languageId,
+                fileName: editor.document.fileName
+            });
+            vscode.window.setStatusBarMessage('RealTutor AI: Code context auto-refreshed!', 2000);
+        }
+    });
+
     context.subscriptions.push(
         disposable, 
         analyzeCommand, 
