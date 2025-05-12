@@ -34,6 +34,10 @@
       {
         "command": "realtutor-ai.clearCache",
         "title": "RealTutor AI: Clear Response Cache"
+      },
+      {
+        "command": "realtutor-ai.refactorWithAI",
+        "title": "Refactor with RealTutor AI"
       }
     ],
     "viewsContainers": {
@@ -66,6 +70,11 @@
         {
           "command": "realtutor-ai.analyzeCode",
           "when": "editorTextFocus",
+          "group": "navigation"
+        },
+        {
+          "command": "realtutor-ai.refactorWithAI",
+          "when": "editorHasSelection",
           "group": "navigation"
         }
       ]

@@ -508,17 +508,27 @@ export function activate(context: vscode.ExtensionContext) {
 
     class RealTutorAICodeActionProvider implements vscode.CodeActionProvider {
         provideCodeActions(document: vscode.TextDocument, range: vscode.Range | vscode.Selection, context: vscode.CodeActionContext, token: vscode.CancellationToken): vscode.CodeAction[] | undefined {
-            // Only show if there is a selection or cursor is on a line
             if (range.isEmpty && !context.diagnostics.length) {
                 return;
             }
-            const action = new vscode.CodeAction('Ask RealTutor AI for suggestion', vscode.CodeActionKind.QuickFix);
-            action.command = {
+            const actions: vscode.CodeAction[] = [];
+            // Suggestion action
+            const suggestionAction = new vscode.CodeAction('Ask RealTutor AI for suggestion', vscode.CodeActionKind.QuickFix);
+            suggestionAction.command = {
                 title: 'Ask RealTutor AI for suggestion',
                 command: 'realtutor-ai.askForSuggestion',
                 arguments: [document, range]
             };
-            return [action];
+            actions.push(suggestionAction);
+            // Refactor action
+            const refactorAction = new vscode.CodeAction('Refactor with RealTutor AI', vscode.CodeActionKind.Refactor);
+            refactorAction.command = {
+                title: 'Refactor with RealTutor AI',
+                command: 'realtutor-ai.refactorWithAI',
+                arguments: [document, range]
+            };
+            actions.push(refactorAction);
+            return actions;
         }
     }
 
@@ -544,6 +554,24 @@ export function activate(context: vscode.ExtensionContext) {
             vscode.window.showInformationMessage('Requesting AI suggestion...');
             await sendAnalysisRequest({
                 userMessage: 'Suggest improvements or fixes for the following code:',
+                codeContext: code,
+                language: document.languageId,
+                fileName: document.fileName
+            });
+        })
+    );
+
+    // Register the command that handles the refactor code action
+    context.subscriptions.push(
+        vscode.commands.registerCommand('realtutor-ai.refactorWithAI', async (document: vscode.TextDocument, range: vscode.Range) => {
+            const code = document.getText(range);
+            if (!code.trim()) {
+                vscode.window.showInformationMessage('No code selected for AI refactor.');
+                return;
+            }
+            vscode.window.showInformationMessage('Requesting AI refactor...');
+            await sendAnalysisRequest({
+                userMessage: 'Refactor the following code to improve readability, performance, and follow best practices. If possible, convert to async and optimize for modern standards:',
                 codeContext: code,
                 language: document.languageId,
                 fileName: document.fileName
