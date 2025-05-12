@@ -169,6 +169,18 @@ export function activate(context: vscode.ExtensionContext) {
                         vscode.window.showErrorMessage('No active editor to refresh context.');
                     }
                     break;
+                case 'applyFix':
+                    const codeeditorApplyFix = vscode.window.activeTextEditor;
+                    if (codeeditorApplyFix) {
+                        await codeeditorApplyFix.edit(editBuilder => {
+                            const selection = codeeditorApplyFix.selection;
+                            editBuilder.replace(selection, message.data.code);
+                        });
+                        vscode.window.showInformationMessage('AI fix applied to your code!');
+                    } else {
+                        vscode.window.showErrorMessage('No active editor to apply fix.');
+                    }
+                    break;
             }
         });
     }
@@ -528,6 +540,17 @@ export function activate(context: vscode.ExtensionContext) {
                 arguments: [document, range]
             };
             actions.push(refactorAction);
+            // Error correction action (only if there are error diagnostics)
+            const errorDiagnostic = context.diagnostics.find(d => d.severity === vscode.DiagnosticSeverity.Error);
+            if (errorDiagnostic) {
+                const fixAction = new vscode.CodeAction('Fix with RealTutor AI', vscode.CodeActionKind.QuickFix);
+                fixAction.command = {
+                    title: 'Fix with RealTutor AI',
+                    command: 'realtutor-ai.fixWithAI',
+                    arguments: [document, range, errorDiagnostic]
+                };
+                actions.push(fixAction);
+            }
             return actions;
         }
     }
@@ -579,6 +602,27 @@ export function activate(context: vscode.ExtensionContext) {
         })
     );
 
+    // Register the command that handles the error correction code action
+    context.subscriptions.push(
+        vscode.commands.registerCommand('realtutor-ai.fixWithAI', async (document: vscode.TextDocument, range: vscode.Range, diagnostic: vscode.Diagnostic) => {
+            const code = document.getText(range);
+            const errorMsg = diagnostic?.message || 'Unknown error';
+            if (!code.trim()) {
+                vscode.window.showInformationMessage('No code selected for AI fix.');
+                return;
+            }
+            vscode.window.showInformationMessage('Requesting AI fix for error...');
+            // Send to backend for fix
+            await sendAnalysisRequest({
+                userMessage: `Fix the following code. Error: ${errorMsg}\nReturn ONLY the fixed code, and a short explanation.`,
+                codeContext: code,
+                language: document.languageId,
+                fileName: document.fileName,
+                error: errorMsg
+            });
+        })
+    );
+
     context.subscriptions.push(
         disposable, 
         analyzeCommand, 
@@ -594,355 +638,588 @@ export function activate(context: vscode.ExtensionContext) {
     );
 }
 function getWebviewContent() {
-    return `<!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>RealTutor AI</title>
-        <style>
-            body {
-                font-family: 'Segoe UI', 'Roboto', Arial, sans-serif;
-                margin: 0;
-                padding: 0;
-                background: linear-gradient(135deg, #232526 0%, #414345 100%);
-                color: var(--vscode-editor-foreground);
-                height: 100vh;
-            }
-            .toolbar {
-                display: flex;
-                gap: 12px;
-                padding: 16px 24px 0 24px;
-                align-items: center;
-            }
-            .toolbar button {
-                padding: 6px 14px;
-                border-radius: 4px;
-                border: none;
-                background: var(--vscode-button-background);
-                color: var(--vscode-button-foreground);
-                cursor: pointer;
-                font-weight: 500;
-                box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-                transition: background 0.2s;
-            }
-            .toolbar button:hover {
-                background: var(--vscode-button-hoverBackground);
-            }
-            .chat-container {
-                display: flex;
-                flex-direction: column;
-                height: 90vh;
-                margin: 0 24px 24px 24px;
-                border-radius: 16px;
-                background: rgba(30, 30, 30, 0.95);
-                box-shadow: 0 4px 32px rgba(0,0,0,0.18);
-                overflow: hidden;
-            }
-            .status-bar {
-                padding: 12px 24px;
-                background: rgba(60, 60, 60, 0.85);
-                color: #bdbdbd;
-                font-size: 13px;
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-            }
-            .messages {
-                flex: 1;
-                overflow-y: auto;
-                padding: 24px;
-                display: flex;
-                flex-direction: column;
-                gap: 18px;
-                background: transparent;
-                scroll-behavior: smooth;
-            }
-            .message-row {
-                display: flex;
-                align-items: flex-end;
-                gap: 10px;
-            }
-            .avatar {
-                width: 36px;
-                height: 36px;
-                border-radius: 50%;
-                background: #3a3a3a;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                font-size: 18px;
-                color: #fff;
-                font-weight: bold;
-                box-shadow: 0 2px 8px rgba(0,0,0,0.10);
-            }
-            .ai-avatar {
-                background: #4e8cff;
-            }
-            .user-avatar {
-                background: #00b894;
-            }
-            .bubble {
-                max-width: 70%;
-                padding: 16px 20px;
-                border-radius: 18px;
-                font-size: 15px;
-                line-height: 1.6;
-                box-shadow: 0 2px 8px rgba(0,0,0,0.10);
-                position: relative;
-                word-break: break-word;
-                background: #232526;
-                color: #fff;
-                transition: background 0.2s;
-            }
-            .ai-bubble {
-                background: #2d3a4a;
-                border-bottom-left-radius: 4px;
-            }
-            .user-bubble {
-                background: #00b894;
-                color: #fff;
-                border-bottom-right-radius: 4px;
-                align-self: flex-end;
-            }
-            .timestamp {
-                font-size: 11px;
-                color: #bdbdbd;
-                margin-top: 4px;
-                margin-left: 46px;
-            }
-            .input-container {
-                display: flex;
-                gap: 8px;
-                padding: 18px 24px;
-                background: rgba(30, 30, 30, 0.98);
-                border-top: 1px solid #333;
-            }
-            #messageInput {
-                flex: 1;
-                padding: 10px 14px;
-                border: 1px solid #444;
-                border-radius: 6px;
-                background: #232526;
-                color: #fff;
-                font-size: 15px;
-            }
-            #sendButton {
-                padding: 10px 22px;
-                background: #4e8cff;
-                color: #fff;
-                border: none;
-                border-radius: 6px;
-                cursor: pointer;
-                font-weight: 600;
-                font-size: 15px;
-                transition: background 0.2s;
-            }
-            #sendButton:hover {
-                background: #2563eb;
-            }
-            .code-block {
-                background: #181c20;
-                border: 1px solid #333;
-                border-radius: 6px;
-                padding: 12px;
-                margin: 10px 0 0 0;
-                font-family: 'Consolas', 'Monaco', monospace;
-                font-size: 14px;
-                color: #e3e3e3;
-                white-space: pre-wrap;
-                overflow-x: auto;
-            }
-            .typing-indicator {
-                display: none;
-                align-self: flex-start;
-                padding: 12px 16px;
-                background: #2d3a4a;
-                border-radius: 8px;
-            }
-            .typing-indicator span {
-                display: inline-block;
-                width: 8px;
-                height: 8px;
-                background: #fff;
-                border-radius: 50%;
-                margin: 0 2px;
-                animation: typing 1s infinite;
-            }
-            .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
-            .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
-            @keyframes typing {
-                0%, 100% { transform: translateY(0); }
-                50% { transform: translateY(-4px); }
-            }
-        </style>
-    </head>
-    <body>
-        <div class="toolbar">
-            <button id="clearCacheBtn">Clear Cache</button>
-            <button id="analyzeProjectBtn">Analyze Project</button>
-            <button id="refreshContextBtn">Refresh Code Context</button>
-        </div>
-        <div class="chat-container">
-            <div class="status-bar">
-                <span id="connectionStatus">Connected</span>
-                <span id="modelInfo">Model: RealTutor AI</span>
-            </div>
-            <div class="messages" id="messages"></div>
-            <div class="typing-indicator" id="typingIndicator">
-                <span></span>
-                <span></span>
-                <span></span>
-            </div>
-            <div class="input-container">
-                <input type="text" id="messageInput" placeholder="Type your message..." />
-                <button id="sendButton">Send</button>
-            </div>
-        </div>
-        <script>
-            const vscode = acquireVsCodeApi();
-            const messagesContainer = document.getElementById('messages');
-            const messageInput = document.getElementById('messageInput');
-            const sendButton = document.getElementById('sendButton');
-            const connectionStatus = document.getElementById('connectionStatus');
-            const modelInfo = document.getElementById('modelInfo');
-            const typingIndicator = document.getElementById('typingIndicator');
-            let messageHistory = [];
+    // Using a different approach to avoid backtick issues
+    const html = [
+        '<!DOCTYPE html>',
+        '<html lang="en">',
+        '<head>',
+        '    <meta charset="UTF-8">',
+        '    <meta name="viewport" content="width=device-width, initial-scale=1.0">',
+        '    <title>RealTutor AI</title>',
+        '    <style>',
+        '        :root {',
+        '            --primary-color: #4e8cff;',
+        '            --primary-dark: #2563eb;',
+        '            --success-color: #00b894;',
+        '            --background-dark: #1e1e1e;',
+        '            --background-darker: #141414;',
+        '            --background-lighter: #2d2d2d;',
+        '            --text-color: #e0e0e0;',
+        '            --text-muted: #a0a0a0;',
+        '            --border-color: #333333;',
+        '        }',
+        '        * {',
+        '            box-sizing: border-box;',
+        '            margin: 0;',
+        '            padding: 0;',
+        '        }',
+        '        body {',
+        '            font-family: \'Segoe UI\', \'Roboto\', Arial, sans-serif;',
+        '            margin: 0;',
+        '            padding: 0;',
+        '            background: var(--background-dark);',
+        '            color: var(--text-color);',
+        '            height: 100vh;',
+        '            overflow: hidden;',
+        '        }',
+        '        .app-container {',
+        '            display: flex;',
+        '            flex-direction: column;',
+        '            height: 100vh;',
+        '            background: var(--background-dark);',
+        '        }',
+        '        .header {',
+        '            display: flex;',
+        '            justify-content: space-between;',
+        '            align-items: center;',
+        '            padding: 12px 20px;',
+        '            background: var(--background-darker);',
+        '            border-bottom: 1px solid var(--border-color);',
+        '        }',
+        '        .header-title {',
+        '            display: flex;',
+        '            align-items: center;',
+        '            gap: 10px;',
+        '        }',
+        '        .header-title h1 {',
+        '            font-size: 16px;',
+        '            font-weight: 500;',
+        '            color: var(--text-color);',
+        '        }',
+        '        .logo {',
+        '            width: 24px;',
+        '            height: 24px;',
+        '            background: var(--primary-color);',
+        '            border-radius: 6px;',
+        '            display: flex;',
+        '            align-items: center;',
+        '            justify-content: center;',
+        '            font-weight: bold;',
+        '            color: white;',
+        '            font-size: 14px;',
+        '        }',
+        '        .toolbar {',
+        '            display: flex;',
+        '            gap: 8px;',
+        '            align-items: center;',
+        '            padding: 10px 16px;',
+        '            background: var(--background-lighter);',
+        '            border-bottom: 1px solid var(--border-color);',
+        '        }',
+        '        .toolbar button {',
+        '            padding: 6px 12px;',
+        '            border-radius: 4px;',
+        '            border: none;',
+        '            background: var(--background-darker);',
+        '            color: var(--text-color);',
+        '            cursor: pointer;',
+        '            font-size: 12px;',
+        '            transition: all 0.2s ease;',
+        '            border: 1px solid var(--border-color);',
+        '        }',
+        '        .toolbar button:hover {',
+        '            background: var(--primary-color);',
+        '            color: white;',
+        '            border-color: var(--primary-color);',
+        '        }',
+        '        .status-bar {',
+        '            display: flex;',
+        '            justify-content: space-between;',
+        '            align-items: center;',
+        '            padding: 8px 16px;',
+        '            background: var(--background-darker);',
+        '            border-bottom: 1px solid var(--border-color);',
+        '            font-size: 12px;',
+        '            color: var(--text-muted);',
+        '        }',
+        '        .status-indicator {',
+        '            display: flex;',
+        '            align-items: center;',
+        '            gap: 6px;',
+        '        }',
+        '        .status-dot {',
+        '            width: 8px;',
+        '            height: 8px;',
+        '            border-radius: 50%;',
+        '            background: #4CAF50;',
+        '        }',
+        '        .disconnected {',
+        '            background: #F44336;',
+        '        }',
+        '        .chat-container {',
+        '            flex: 1;',
+        '            display: flex;',
+        '            flex-direction: column;',
+        '            overflow: hidden;',
+        '        }',
+        '        .messages {',
+        '            flex: 1;',
+        '            overflow-y: auto;',
+        '            padding: 20px;',
+        '            display: flex;',
+        '            flex-direction: column;',
+        '            gap: 16px;',
+        '            scroll-behavior: smooth;',
+        '        }',
+        '        .message-row {',
+        '            display: flex;',
+        '            gap: 12px;',
+        '            max-width: 90%;',
+        '        }',
+        '        .message-row.user {',
+        '            align-self: flex-end;',
+        '            flex-direction: row-reverse;',
+        '        }',
+        '        .avatar {',
+        '            width: 32px;',
+        '            height: 32px;',
+        '            border-radius: 50%;',
+        '            display: flex;',
+        '            align-items: center;',
+        '            justify-content: center;',
+        '            font-size: 14px;',
+        '            color: white;',
+        '            font-weight: 500;',
+        '            flex-shrink: 0;',
+        '        }',
+        '        .ai-avatar {',
+        '            background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-dark) 100%);',
+        '            box-shadow: 0 2px 10px rgba(78, 140, 255, 0.3);',
+        '        }',
+        '        .user-avatar {',
+        '            background: linear-gradient(135deg, var(--success-color) 0%, #009b77 100%);',
+        '            box-shadow: 0 2px 10px rgba(0, 184, 148, 0.3);',
+        '        }',
+        '        .message-content {',
+        '            display: flex;',
+        '            flex-direction: column;',
+        '            gap: 4px;',
+        '        }',
+        '        .bubble {',
+        '            padding: 12px 16px;',
+        '            border-radius: 12px;',
+        '            font-size: 14px;',
+        '            line-height: 1.5;',
+        '            position: relative;',
+        '            word-break: break-word;',
+        '            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);',
+        '        }',
+        '        .ai-bubble {',
+        '            background: var(--background-lighter);',
+        '            border-bottom-left-radius: 4px;',
+        '            border: 1px solid var(--border-color);',
+        '        }',
+        '        .user-bubble {',
+        '            background: var(--success-color);',
+        '            color: white;',
+        '            border-bottom-right-radius: 4px;',
+        '        }',
+        '        .timestamp {',
+        '            font-size: 10px;',
+        '            color: var(--text-muted);',
+        '            margin-top: 4px;',
+        '        }',
+        '        .actions {',
+        '            display: flex;',
+        '            gap: 8px;',
+        '            margin-top: 8px;',
+        '        }',
+        '        .action-btn {',
+        '            background: var(--background-darker);',
+        '            border: 1px solid var(--border-color);',
+        '            color: var(--text-color);',
+        '            border-radius: 4px;',
+        '            padding: 4px 8px;',
+        '            font-size: 12px;',
+        '            cursor: pointer;',
+        '            transition: all 0.2s ease;',
+        '        }',
+        '        .action-btn:hover {',
+        '            background: var(--primary-color);',
+        '            color: white;',
+        '            border-color: var(--primary-color);',
+        '        }',
+        '        .feedback {',
+        '            display: flex;',
+        '            gap: 8px;',
+        '            margin-top: 8px;',
+        '        }',
+        '        .feedback button {',
+        '            background: transparent;',
+        '            border: none;',
+        '            color: var(--text-muted);',
+        '            cursor: pointer;',
+        '            font-size: 16px;',
+        '            padding: 2px;',
+        '            border-radius: 4px;',
+        '            transition: all 0.2s ease;',
+        '        }',
+        '        .feedback button:hover {',
+        '            color: var(--text-color);',
+        '            background: rgba(255, 255, 255, 0.1);',
+        '        }',
+        '        .input-container {',
+        '            display: flex;',
+        '            gap: 8px;',
+        '            padding: 16px;',
+        '            background: var(--background-darker);',
+        '            border-top: 1px solid var(--border-color);',
+        '        }',
+        '        .input-wrapper {',
+        '            flex: 1;',
+        '            position: relative;',
+        '            display: flex;',
+        '            align-items: center;',
+        '        }',
+        '        #messageInput {',
+        '            width: 100%;',
+        '            padding: 12px 16px;',
+        '            border: 1px solid var(--border-color);',
+        '            border-radius: 8px;',
+        '            background: var(--background-lighter);',
+        '            color: var(--text-color);',
+        '            font-size: 14px;',
+        '            resize: none;',
+        '            outline: none;',
+        '            transition: border-color 0.2s ease;',
+        '            line-height: 1.5;',
+        '        }',
+        '        #messageInput:focus {',
+        '            border-color: var(--primary-color);',
+        '        }',
+        '        #sendButton {',
+        '            padding: 12px 20px;',
+        '            background: var(--primary-color);',
+        '            color: white;',
+        '            border: none;',
+        '            border-radius: 8px;',
+        '            cursor: pointer;',
+        '            font-weight: 500;',
+        '            font-size: 14px;',
+        '            transition: background 0.2s ease;',
+        '            display: flex;',
+        '            align-items: center;',
+        '            justify-content: center;',
+        '        }',
+        '        #sendButton:hover {',
+        '            background: var(--primary-dark);',
+        '        }',
+        '        .code-block {',
+        '            background: var(--background-darker);',
+        '            border: 1px solid var(--border-color);',
+        '            border-radius: 6px;',
+        '            padding: 12px;',
+        '            margin: 8px 0;',
+        '            font-family: \'Consolas\', \'Monaco\', monospace;',
+        '            font-size: 13px;',
+        '            color: var(--text-color);',
+        '            white-space: pre-wrap;',
+        '            overflow-x: auto;',
+        '        }',
+        '        .typing-indicator {',
+        '            display: none;',
+        '            align-items: center;',
+        '            padding: 8px 12px;',
+        '            background: var(--background-lighter);',
+        '            border-radius: 8px;',
+        '            margin: 4px 0 4px 40px;',
+        '            width: fit-content;',
+        '        }',
+        '        .typing-dot {',
+        '            width: 8px;',
+        '            height: 8px;',
+        '            background: var(--primary-color);',
+        '            border-radius: 50%;',
+        '            margin: 0 2px;',
+        '            animation: typing 1s infinite;',
+        '            opacity: 0.7;',
+        '        }',
+        '        .typing-dot:nth-child(2) { animation-delay: 0.2s; }',
+        '        .typing-dot:nth-child(3) { animation-delay: 0.4s; }',
+        '        @keyframes typing {',
+        '            0%, 100% { transform: translateY(0); }',
+        '            50% { transform: translateY(-4px); }',
+        '        }',
+        '        /* Custom scrollbar */  ',
+        '        ::-webkit-scrollbar {',
+        '            width: 6px;',
+        '            height: 6px;',
+        '        }',
+        '        ::-webkit-scrollbar-track {',
+        '            background: var(--background-dark);',
+        '        }',
+        '        ::-webkit-scrollbar-thumb {',
+        '            background: var(--border-color);',
+        '            border-radius: 6px;',
+        '        }',
+        '        ::-webkit-scrollbar-thumb:hover {',
+        '            background: var(--primary-color);',
+        '        }',
+        '        /* Custom cursor */  ',
+        '        body, button, input {',
+        '            cursor: default;',
+        '        }',
+        '        button, input, .action-btn, .feedback button {',
+        '            cursor: pointer;',
+        '        }',
+        '        ::selection {',
+        '            background: rgba(78, 140, 255, 0.3);',
+        '        }',
+        '    </style>',
+        '</head>',
+        '<body>',
+        '    <div class="app-container">',
+        '        <div class="header">',
+        '            <div class="header-title">',
+        '                <div class="logo">RT</div>',
+        '                <h1>RealTutor AI</h1>',
+        '            </div>',
+        '            <div id="modelInfo">deepseek-r1-distill</div>',
+        '        </div>',
+        '        <div class="toolbar">',
+        '            <button id="clearCacheBtn">Clear Cache</button>',
+        '            <button id="analyzeProjectBtn">Analyze Project</button>',
+        '            <button id="refreshContextBtn">Refresh Context</button>',
+        '        </div>',
+        '        <div class="status-bar">',
+        '            <div class="status-indicator">',
+        '                <div id="statusDot" class="status-dot"></div>',
+        '                <span id="connectionStatus">Connected</span>',
+        '            </div>',
+        '            <div>Ready to assist with your code</div>',
+        '        </div>',
+        '        <div class="chat-container">',
+        '            <div class="messages" id="messages"></div>',
+        '            <div class="typing-indicator" id="typingIndicator">',
+        '                <div class="typing-dot"></div>',
+        '                <div class="typing-dot"></div>',
+        '                <div class="typing-dot"></div>',
+        '            </div>',
+        '            <div class="input-container">',
+        '                <div class="input-wrapper">',
+        '                    <input type="text" id="messageInput" placeholder="Ask a question about your code..." />',
+        '                </div>',
+        '                <button id="sendButton">Send</button>',
+        '            </div>',
+        '        </div>',
+        '    </div>',
+        '    <script>',
+        '        const vscode = acquireVsCodeApi();',
+        '        const messagesContainer = document.getElementById(\'messages\');',
+        '        const messageInput = document.getElementById(\'messageInput\');',
+        '        const sendButton = document.getElementById(\'sendButton\');',
+        '        const connectionStatus = document.getElementById(\'connectionStatus\');',
+        '        const statusDot = document.getElementById(\'statusDot\');',
+        '        const modelInfo = document.getElementById(\'modelInfo\');',
+        '        const typingIndicator = document.getElementById(\'typingIndicator\');',
+        '        let messageHistory = [];',
+        '',
+        '        function formatTime(date) {',
+        '            return date.toLocaleTimeString([], { hour: \'2-digit\', minute: \'2-digit\' });',
+        '        }',
+        '',
+        '        function addMessage(content, isUser = false, messageId = undefined) {',
+        '            const row = document.createElement(\'div\');',
+        '            row.className = \'message-row\' + (isUser ? \' user\' : \'\');',
+        '',
+        '            const avatar = document.createElement(\'div\');',
+        '            avatar.className = \'avatar \' + (isUser ? \'user-avatar\' : \'ai-avatar\');',
+        '            avatar.textContent = isUser ? \'You\' : \'AI\';',
+        '',
+        '            const messageContent = document.createElement(\'div\');',
+        '            messageContent.className = \'message-content\';',
+        '',
+        '            const bubble = document.createElement(\'div\');',
+        '            bubble.className = \'bubble \' + (isUser ? \'user-bubble\' : \'ai-bubble\');',
+        '            ',
+        '            // Code block support with Apply Fix button for AI',
+        '            if (!isUser && content.indexOf("```") !== -1) {',
+        '                const parts = content.split("```");',
+        '                for (let index = 0; index < parts.length; index++) {',
+        '                    const part = parts[index];',
+        '                    if (index % 2 === 0) {',
+        '                        if (part) bubble.appendChild(document.createTextNode(part));',
+        '                    } else {',
+        '                        const codeBlock = document.createElement(\'pre\');',
+        '                        codeBlock.className = \'code-block\';',
+        '                        codeBlock.textContent = part;',
+        '                        bubble.appendChild(codeBlock);',
+        '',
+        '                        const actions = document.createElement(\'div\');',
+        '                        actions.className = \'actions\';',
+        '',
+        '                        const applyBtn = document.createElement(\'button\');',
+        '                        applyBtn.className = \'action-btn\';',
+        '                        applyBtn.textContent = \'Apply Fix\';',
+        '                        applyBtn.onclick = function() {',
+        '                            vscode.postMessage({ type: \'applyFix\', data: { code: part } });',
+        '                        };',
+        '                        actions.appendChild(applyBtn);',
+        '',
+        '                        const copyBtn = document.createElement(\'button\');',
+        '                        copyBtn.className = \'action-btn\';',
+        '                        copyBtn.textContent = \'Copy\';',
+        '                        copyBtn.onclick = function() {',
+        '                            navigator.clipboard.writeText(part);',
+        '                            copyBtn.textContent = \'Copied!\';',
+        '                            setTimeout(() => { copyBtn.textContent = \'Copy\'; }, 2000);',
+        '                        };',
+        '                        actions.appendChild(copyBtn);',
+        '',
+        '                        bubble.appendChild(actions);',
+        '                    }',
+        '                }',
+        '            } else if (content.indexOf("```") !== -1) {',
+        '                // User message with code block, no Apply Fix',
+        '                const parts = content.split("```");',
+        '                for (let index = 0; index < parts.length; index++) {',
+        '                    const part = parts[index];',
+        '                    if (index % 2 === 0) {',
+        '                        if (part) bubble.appendChild(document.createTextNode(part));',
+        '                    } else {',
+        '                        const codeBlock = document.createElement(\'pre\');',
+        '                        codeBlock.className = \'code-block\';',
+        '                        codeBlock.textContent = part;',
+        '                        bubble.appendChild(codeBlock);',
+        '                    }',
+        '                }',
+        '            } else {',
+        '                bubble.textContent = content;',
+        '            }',
+        '',
+        '            messageContent.appendChild(bubble);',
+        '',
+        '            const timestamp = document.createElement(\'div\');',
+        '            timestamp.className = \'timestamp\';',
+        '            timestamp.textContent = formatTime(new Date());',
+        '            messageContent.appendChild(timestamp);',
+        '',
+        '            if (!isUser) {',
+        '                const feedback = document.createElement(\'div\');',
+        '                feedback.className = \'feedback\';',
+        '',
+        '                const thumbsUp = document.createElement(\'button\');',
+        '                thumbsUp.textContent = \'👍\';',
+        '                thumbsUp.title = \'Helpful\';',
+        '                thumbsUp.onclick = function() {',
+        '                    vscode.postMessage({ type: \'feedback\', data: { messageId, feedback: \'up\' } });',
+        '                    thumbsUp.style.color = \'#4CAF50\';',
+        '                    thumbsDown.disabled = true;',
+        '                    thumbsUp.disabled = true;',
+        '                };',
+        '',
+        '                const thumbsDown = document.createElement(\'button\');',
+        '                thumbsDown.textContent = \'👎\';',
+        '                thumbsDown.title = \'Not Helpful\';',
+        '                thumbsDown.onclick = function() {',
+        '                    vscode.postMessage({ type: \'feedback\', data: { messageId, feedback: \'down\' } });',
+        '                    thumbsDown.style.color = \'#F44336\';',
+        '                    thumbsUp.disabled = true;',
+        '                    thumbsDown.disabled = true;',
+        '                };',
+        '',
+        '                feedback.appendChild(thumbsUp);',
+        '                feedback.appendChild(thumbsDown);',
+        '                messageContent.appendChild(feedback);',
+        '            }',
+        '',
+        '            row.appendChild(avatar);',
+        '            row.appendChild(messageContent);',
+        '',
+        '            messagesContainer.appendChild(row);',
+        '            messagesContainer.scrollTop = messagesContainer.scrollHeight;',
+        '            messageHistory.push({ content, isUser });',
+        '        }',
+        '',
+        '        function showTypingIndicator() {',
+        '            typingIndicator.style.display = \'flex\';',
+        '            messagesContainer.scrollTop = messagesContainer.scrollHeight;',
+        '        }',
+        '        ',
+        '        function hideTypingIndicator() {',
+        '            typingIndicator.style.display = \'none\';',
+        '        }',
+        '        ',
+        '        function sendMessage() {',
+        '            const message = messageInput.value.trim();',
+        '            if (message) {',
+        '                addMessage(message, true);',
+        '                messageInput.value = \'\';',
+        '                showTypingIndicator();',
+        '                vscode.postMessage({',
+        '                    type: \'userMessage\',',
+        '                    data: { message }',
+        '                });',
+        '            }',
+        '        }',
+        '        ',
+        '        sendButton.addEventListener(\'click\', sendMessage);',
+        '        messageInput.addEventListener(\'keypress\', function(e) {',
+        '            if (e.key === \'Enter\' && !e.shiftKey) {',
+        '                e.preventDefault();',
+        '                sendMessage();',
+        '            }',
+        '        });',
+        '        ',
+        '        window.addEventListener(\'message\', function(event) {',
+        '            const message = event.data;',
+        '            ',
+        '            switch (message.type) {',
+        '                case \'status\':',
+        '                    connectionStatus.textContent = message.data.connected ? \'Connected\' : \'Disconnected\';',
+        '                    statusDot.classList.toggle(\'disconnected\', !message.data.connected);',
+        '                    if (message.data.model) {',
+        '                        modelInfo.textContent = message.data.model;',
+        '                    }',
+        '                    break;',
+        '                    ',
+        '                case \'response\':',
+        '                    hideTypingIndicator();',
+        '                    addMessage(message.data.message, false, message.messageId);',
+        '                    break;',
+        '                    ',
+        '                case \'error\':',
+        '                    hideTypingIndicator();',
+        '                    addMessage(\'Error: \' + message.data.message);',
+        '                    break;',
+        '            }',
+        '        });',
+        '        ',
+        '        // Request initial status',
+        '        vscode.postMessage({ type: \'getStatus\' });',
+        '',
+        '        // Toolbar button handlers',
+        '        document.getElementById(\'clearCacheBtn\').onclick = function() {',
+        '            vscode.postMessage({ type: \'clearCache\' });',
+        '        };',
+        '        document.getElementById(\'analyzeProjectBtn\').onclick = function() {',
+        '            vscode.postMessage({ type: \'analyzeProject\' });',
+        '        };',
+        '        document.getElementById(\'refreshContextBtn\').onclick = function() {',
+        '            vscode.postMessage({ type: \'refreshContext\' });',
+        '        };',
+        '',
+        '        // Focus input on load',
+        '        messageInput.focus();',
+        '',
+        '        // Add welcome message',
+        '        setTimeout(() => {',
+        '            addMessage("👋 Hi! I\'m RealTutor AI, your coding assistant. How can I help you today?");',
+        '        }, 500);',
+        '    </script>',
+        '</body>',
+        '</html>'
+    ].join('\n');
 
-            function formatTime(date) {
-                return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            }
-
-            function addMessage(content, isUser = false, messageId = undefined) {
-                const row = document.createElement('div');
-                row.className = 'message-row';
-                const avatar = document.createElement('div');
-                avatar.className = 'avatar ' + (isUser ? 'user-avatar' : 'ai-avatar');
-                avatar.textContent = isUser ? 'You' : 'AI';
-                const bubble = document.createElement('div');
-                bubble.className = 'bubble ' + (isUser ? 'user-bubble' : 'ai-bubble');
-                // Code block support
-                if (content.includes('\`\`\`')) {
-                    const parts = content.split('\`\`\`');
-                    parts.forEach((part, index) => {
-                        if (index % 2 === 0) {
-                            bubble.appendChild(document.createTextNode(part));
-                        } else {
-                            const codeBlock = document.createElement('pre');
-                            codeBlock.className = 'code-block';
-                            codeBlock.textContent = part;
-                            bubble.appendChild(codeBlock);
-                        }
-                    });
-                } else {
-                    bubble.textContent = content;
-                }
-                row.appendChild(isUser ? bubble : avatar);
-                row.appendChild(isUser ? avatar : bubble);
-
-                // Timestamp
-                const timestamp = document.createElement('div');
-                timestamp.className = 'timestamp';
-                timestamp.textContent = formatTime(new Date());
-                row.appendChild(timestamp);
-
-                // Feedback and insert buttons for AI
-                if (!isUser) {
-                    const feedbackDiv = document.createElement('div');
-                    feedbackDiv.style.marginTop = '8px';
-                    feedbackDiv.style.display = 'flex';
-                    feedbackDiv.style.gap = '8px';
-                    const thumbsUp = document.createElement('button');
-                    thumbsUp.textContent = '👍';
-                    thumbsUp.title = 'Helpful';
-                    thumbsUp.style.cursor = 'pointer';
-                    thumbsUp.onclick = () => {
-                        vscode.postMessage({ type: 'feedback', data: { messageId, feedback: 'up' } });
-                        thumbsUp.disabled = true;
-                        thumbsDown.disabled = true;
-                    };
-                    const thumbsDown = document.createElement('button');
-                    thumbsDown.textContent = '👎';
-                    thumbsDown.title = 'Not Helpful';
-                    thumbsDown.style.cursor = 'pointer';
-                    thumbsDown.onclick = () => {
-                        vscode.postMessage({ type: 'feedback', data: { messageId, feedback: 'down' } });
-                        thumbsUp.disabled = true;
-                        thumbsDown.disabled = true;
-                    };
-                    feedbackDiv.appendChild(thumbsUp);
-                    feedbackDiv.appendChild(thumbsDown);
-                    bubble.appendChild(feedbackDiv);
-                }
-
-                messagesContainer.appendChild(row);
-                messagesContainer.scrollTop = messagesContainer.scrollHeight;
-                messageHistory.push({ content, isUser });
-            }
-
-            function showTypingIndicator() {
-                typingIndicator.style.display = 'block';
-                messagesContainer.scrollTop = messagesContainer.scrollHeight;
-            }
-            
-            function hideTypingIndicator() {
-                typingIndicator.style.display = 'none';
-            }
-            
-            function sendMessage() {
-                const message = messageInput.value.trim();
-                if (message) {
-                    addMessage(message, true);
-                    messageInput.value = '';
-                    showTypingIndicator();
-                    vscode.postMessage({
-                        type: 'userMessage',
-                        data: { message }
-                    });
-                }
-            }
-            
-            sendButton.addEventListener('click', sendMessage);
-            messageInput.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') {
-                    sendMessage();
-                }
-            });
-            
-            window.addEventListener('message', event => {
-                const message = event.data;
-                
-                switch (message.type) {
-                    case 'status':
-                        connectionStatus.textContent = message.data.connected ? 'Connected' : 'Disconnected';
-                        connectionStatus.style.color = message.data.connected ? 'var(--vscode-testing-iconPassed)' : 'var(--vscode-testing-iconFailed)';
-                        if (message.data.model) {
-                            modelInfo.textContent = \`Model: \${message.data.model}\`;
-                        }
-                        break;
-                        
-                    case 'response':
-                        hideTypingIndicator();
-                        addMessage(message.data.message);
-                        break;
-                        
-                    case 'error':
-                        hideTypingIndicator();
-                        addMessage(\`Error: \${message.data.message}\`);
-                        break;
-                }
-            });
-            
-            // Request initial status
-            vscode.postMessage({ type: 'getStatus' });
-
-            // Toolbar button handlers
-            document.getElementById('clearCacheBtn').onclick = () => vscode.postMessage({ type: 'clearCache' });
-            document.getElementById('analyzeProjectBtn').onclick = () => vscode.postMessage({ type: 'analyzeProject' });
-            document.getElementById('refreshContextBtn').onclick = () => vscode.postMessage({ type: 'refreshContext' });
-        </script>
-    </body>
-    </html>`;
+    return html;
 }
-
-export function deactivate() {}
