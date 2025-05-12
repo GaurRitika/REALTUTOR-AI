@@ -475,19 +475,6 @@ export function activate(context: vscode.ExtensionContext) {
         }
     });
 
-    // Auto-refresh code context on file switch or editor change
-    vscode.window.onDidChangeActiveTextEditor(async (editor) => {
-        if (editor && tutorPanel) {
-            await sendAnalysisRequest({
-                userMessage: 'Auto-refresh code context (file switched)',
-                codeContext: editor.document.getText(),
-                language: editor.document.languageId,
-                fileName: editor.document.fileName
-            });
-            vscode.window.setStatusBarMessage('RealTutor AI: Code context auto-refreshed!', 2000);
-        }
-    });
-
     context.subscriptions.push(
         disposable, 
         analyzeCommand, 
@@ -502,7 +489,6 @@ export function activate(context: vscode.ExtensionContext) {
         }}
     );
 }
-
 function getWebviewContent() {
     return `<!DOCTYPE html>
     <html lang="en">
@@ -512,16 +498,17 @@ function getWebviewContent() {
         <title>RealTutor AI</title>
         <style>
             body {
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
-                padding: 20px;
+                font-family: 'Segoe UI', 'Roboto', Arial, sans-serif;
                 margin: 0;
-                background: var(--vscode-editor-background);
+                padding: 0;
+                background: linear-gradient(135deg, #232526 0%, #414345 100%);
                 color: var(--vscode-editor-foreground);
+                height: 100vh;
             }
             .toolbar {
                 display: flex;
                 gap: 12px;
-                margin-bottom: 12px;
+                padding: 16px 24px 0 24px;
                 align-items: center;
             }
             .toolbar button {
@@ -531,6 +518,9 @@ function getWebviewContent() {
                 background: var(--vscode-button-background);
                 color: var(--vscode-button-foreground);
                 cursor: pointer;
+                font-weight: 500;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+                transition: background 0.2s;
             }
             .toolbar button:hover {
                 background: var(--vscode-button-hoverBackground);
@@ -538,88 +528,139 @@ function getWebviewContent() {
             .chat-container {
                 display: flex;
                 flex-direction: column;
-                height: calc(100vh - 40px);
-            }
-            .messages {
-                flex: 1;
-                overflow-y: auto;
-                padding: 20px;
-                display: flex;
-                flex-direction: column;
-                gap: 16px;
-            }
-            .message {
-                max-width: 80%;
-                padding: 12px 16px;
-                border-radius: 8px;
-                line-height: 1.5;
-            }
-            .user-message {
-                align-self: flex-end;
-                background: var(--vscode-button-background);
-                color: var(--vscode-button-foreground);
-            }
-            .ai-message {
-                align-self: flex-start;
-                background: var(--vscode-editor-inactiveSelectionBackground);
-            }
-            .input-container {
-                display: flex;
-                gap: 8px;
-                padding: 16px;
-                background: var(--vscode-editor-background);
-                border-top: 1px solid var(--vscode-panel-border);
-            }
-            #messageInput {
-                flex: 1;
-                padding: 8px 12px;
-                border: 1px solid var(--vscode-input-border);
-                border-radius: 4px;
-                background: var(--vscode-input-background);
-                color: var(--vscode-input-foreground);
-                font-size: 14px;
-            }
-            #sendButton {
-                padding: 8px 16px;
-                background: var(--vscode-button-background);
-                color: var(--vscode-button-foreground);
-                border: none;
-                border-radius: 4px;
-                cursor: pointer;
-            }
-            #sendButton:hover {
-                background: var(--vscode-button-hoverBackground);
+                height: 90vh;
+                margin: 0 24px 24px 24px;
+                border-radius: 16px;
+                background: rgba(30, 30, 30, 0.95);
+                box-shadow: 0 4px 32px rgba(0,0,0,0.18);
+                overflow: hidden;
             }
             .status-bar {
-                padding: 8px 16px;
-                background: var(--vscode-statusBar-background);
-                color: var(--vscode-statusBar-foreground);
-                font-size: 12px;
+                padding: 12px 24px;
+                background: rgba(60, 60, 60, 0.85);
+                color: #bdbdbd;
+                font-size: 13px;
                 display: flex;
                 justify-content: space-between;
                 align-items: center;
             }
+            .messages {
+                flex: 1;
+                overflow-y: auto;
+                padding: 24px;
+                display: flex;
+                flex-direction: column;
+                gap: 18px;
+                background: transparent;
+                scroll-behavior: smooth;
+            }
+            .message-row {
+                display: flex;
+                align-items: flex-end;
+                gap: 10px;
+            }
+            .avatar {
+                width: 36px;
+                height: 36px;
+                border-radius: 50%;
+                background: #3a3a3a;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 18px;
+                color: #fff;
+                font-weight: bold;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.10);
+            }
+            .ai-avatar {
+                background: #4e8cff;
+            }
+            .user-avatar {
+                background: #00b894;
+            }
+            .bubble {
+                max-width: 70%;
+                padding: 16px 20px;
+                border-radius: 18px;
+                font-size: 15px;
+                line-height: 1.6;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.10);
+                position: relative;
+                word-break: break-word;
+                background: #232526;
+                color: #fff;
+                transition: background 0.2s;
+            }
+            .ai-bubble {
+                background: #2d3a4a;
+                border-bottom-left-radius: 4px;
+            }
+            .user-bubble {
+                background: #00b894;
+                color: #fff;
+                border-bottom-right-radius: 4px;
+                align-self: flex-end;
+            }
+            .timestamp {
+                font-size: 11px;
+                color: #bdbdbd;
+                margin-top: 4px;
+                margin-left: 46px;
+            }
+            .input-container {
+                display: flex;
+                gap: 8px;
+                padding: 18px 24px;
+                background: rgba(30, 30, 30, 0.98);
+                border-top: 1px solid #333;
+            }
+            #messageInput {
+                flex: 1;
+                padding: 10px 14px;
+                border: 1px solid #444;
+                border-radius: 6px;
+                background: #232526;
+                color: #fff;
+                font-size: 15px;
+            }
+            #sendButton {
+                padding: 10px 22px;
+                background: #4e8cff;
+                color: #fff;
+                border: none;
+                border-radius: 6px;
+                cursor: pointer;
+                font-weight: 600;
+                font-size: 15px;
+                transition: background 0.2s;
+            }
+            #sendButton:hover {
+                background: #2563eb;
+            }
             .code-block {
-                background: var(--vscode-editor-background);
-                border: 1px solid var(--vscode-panel-border);
-                border-radius: 4px;
+                background: #181c20;
+                border: 1px solid #333;
+                border-radius: 6px;
                 padding: 12px;
-                margin: 8px 0;
+                margin: 10px 0 0 0;
                 font-family: 'Consolas', 'Monaco', monospace;
+                font-size: 14px;
+                color: #e3e3e3;
                 white-space: pre-wrap;
+                overflow-x: auto;
             }
             .typing-indicator {
                 display: none;
                 align-self: flex-start;
                 padding: 12px 16px;
-                background: var(--vscode-editor-inactiveSelectionBackground);
+                background: #2d3a4a;
                 border-radius: 8px;
             }
             .typing-indicator span {
                 display: inline-block;
                 width: 8px;
                 height: 8px;
-                background: var(--vscode-editor-foreground);
+                background: #fff;
                 border-radius: 50%;
                 margin: 0 2px;
                 animation: typing 1s infinite;
@@ -640,7 +681,7 @@ function getWebviewContent() {
         </div>
         <div class="chat-container">
             <div class="status-bar">
-                <span id="connectionStatus">Connecting...</span>
+                <span id="connectionStatus">Connected</span>
                 <span id="modelInfo">Model: RealTutor AI</span>
             </div>
             <div class="messages" id="messages"></div>
@@ -662,49 +703,51 @@ function getWebviewContent() {
             const connectionStatus = document.getElementById('connectionStatus');
             const modelInfo = document.getElementById('modelInfo');
             const typingIndicator = document.getElementById('typingIndicator');
-            
             let messageHistory = [];
-            
+
+            function formatTime(date) {
+                return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            }
+
             function addMessage(content, isUser = false, messageId = undefined) {
-                const messageDiv = document.createElement('div');
-                messageDiv.className = \`message \${isUser ? 'user-message' : 'ai-message'}\`;
-                
-                // Check if content contains code blocks
+                const row = document.createElement('div');
+                row.className = 'message-row';
+                const avatar = document.createElement('div');
+                avatar.className = 'avatar ' + (isUser ? 'user-avatar' : 'ai-avatar');
+                avatar.textContent = isUser ? 'You' : 'AI';
+                const bubble = document.createElement('div');
+                bubble.className = 'bubble ' + (isUser ? 'user-bubble' : 'ai-bubble');
+                // Code block support
                 if (content.includes('\`\`\`')) {
                     const parts = content.split('\`\`\`');
                     parts.forEach((part, index) => {
                         if (index % 2 === 0) {
-                            // Regular text
-                            messageDiv.appendChild(document.createTextNode(part));
+                            bubble.appendChild(document.createTextNode(part));
                         } else {
-                            // Code block
                             const codeBlock = document.createElement('pre');
                             codeBlock.className = 'code-block';
                             codeBlock.textContent = part;
-                            messageDiv.appendChild(codeBlock);
-
-                            // Insert into Editor button
-                            const insertBtn = document.createElement('button');
-                            insertBtn.textContent = 'Insert into Editor';
-                            insertBtn.style.marginLeft = '8px';
-                            insertBtn.style.cursor = 'pointer';
-                            insertBtn.onclick = () => {
-                                vscode.postMessage({ type: 'insertCode', data: { code: part } });
-                            };
-                            messageDiv.appendChild(insertBtn);
+                            bubble.appendChild(codeBlock);
                         }
                     });
                 } else {
-                    messageDiv.textContent = content;
+                    bubble.textContent = content;
                 }
-                
-                // Add feedback buttons for AI messages
+                row.appendChild(isUser ? bubble : avatar);
+                row.appendChild(isUser ? avatar : bubble);
+
+                // Timestamp
+                const timestamp = document.createElement('div');
+                timestamp.className = 'timestamp';
+                timestamp.textContent = formatTime(new Date());
+                row.appendChild(timestamp);
+
+                // Feedback and insert buttons for AI
                 if (!isUser) {
                     const feedbackDiv = document.createElement('div');
                     feedbackDiv.style.marginTop = '8px';
                     feedbackDiv.style.display = 'flex';
                     feedbackDiv.style.gap = '8px';
-                    
                     const thumbsUp = document.createElement('button');
                     thumbsUp.textContent = '👍';
                     thumbsUp.title = 'Helpful';
@@ -714,7 +757,6 @@ function getWebviewContent() {
                         thumbsUp.disabled = true;
                         thumbsDown.disabled = true;
                     };
-                    
                     const thumbsDown = document.createElement('button');
                     thumbsDown.textContent = '👎';
                     thumbsDown.title = 'Not Helpful';
@@ -724,27 +766,16 @@ function getWebviewContent() {
                         thumbsUp.disabled = true;
                         thumbsDown.disabled = true;
                     };
-                    
                     feedbackDiv.appendChild(thumbsUp);
                     feedbackDiv.appendChild(thumbsDown);
-                    messageDiv.appendChild(feedbackDiv);
-
-                    // Add project analysis button
-                    const analyzeBtn = document.createElement('button');
-                    analyzeBtn.textContent = 'Analyze Project';
-                    analyzeBtn.style.marginLeft = '8px';
-                    analyzeBtn.style.cursor = 'pointer';
-                    analyzeBtn.onclick = async () => {
-                        vscode.postMessage({ type: 'analyzeProject' });
-                    };
-                    messageDiv.appendChild(analyzeBtn);
+                    bubble.appendChild(feedbackDiv);
                 }
-                
-                messagesContainer.appendChild(messageDiv);
+
+                messagesContainer.appendChild(row);
                 messagesContainer.scrollTop = messagesContainer.scrollHeight;
                 messageHistory.push({ content, isUser });
             }
-            
+
             function showTypingIndicator() {
                 typingIndicator.style.display = 'block';
                 messagesContainer.scrollTop = messagesContainer.scrollHeight;
@@ -808,6 +839,7 @@ function getWebviewContent() {
         </script>
     </body>
     </html>`;
+
 }
 
 export function deactivate() {}
