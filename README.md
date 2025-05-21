@@ -165,3 +165,6 @@ Happy coding with your new AI assistant! 🚀
 
 ![image](https://github.com/user-attachments/assets/c9267495-91d1-47e2-b74e-b58cbc776a1a)
 
+![image](https://github.com/user-attachments/assets/2dbee9df-2caf-40e3-a989-0a66dad80ee5)
+
+
