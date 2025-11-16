@@ -1,4 +1,4 @@
-# RealTutor AI - VS Code Extension
+# RealTutor AI - VS Code Extension (14 installs ❤️ way to more...)
 
 <img width="1917" height="1009" alt="image" src="https://github.com/user-attachments/assets/2fe87a35-eacf-4007-838f-b81cb6b199ce" />
 
