@@ -1,5 +1,7 @@
 # RealTutor AI - VS Code Extension
 
+<img width="1917" height="1009" alt="image" src="https://github.com/user-attachments/assets/2fe87a35-eacf-4007-838f-b81cb6b199ce" />
+
 ![image](https://github.com/user-attachments/assets/c3da398c-f055-4768-b432-2f715d38cc40)
 
 ![image](https://github.com/user-attachments/assets/ea14417b-420b-4ba6-978f-66e89421e376)
