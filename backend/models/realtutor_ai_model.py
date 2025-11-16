@@ -9,7 +9,7 @@ class RealTutorAI:
     def __init__(self):
         # Use cutting-edge model configuration
         self.model = ChatGroq(
-            model="llama-3.3-70b-versatile",
+            model="llama-3.1-70b-versatile",
             temperature=0.05,  # Ultra-precise responses
             max_tokens=6000,  # Extended context for comprehensive solutions
             top_p=0.92,  # Tightly focused on most probable tokens
