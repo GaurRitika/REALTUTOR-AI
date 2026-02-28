@@ -1,4 +1,6 @@
-# RealTutor AI - VS Code Extension (14 installs ❤️ way to more...)
+# RealTutor AI - VS Code Extension 
+
+Built using Github Copilot , helped me making this extension easily , thanks github Copilot !!!
 
 <img width="1917" height="1009" alt="image" src="https://github.com/user-attachments/assets/2fe87a35-eacf-4007-838f-b81cb6b199ce" />
 
@@ -178,7 +180,7 @@ Happy coding with your new AI assistant! 🚀
 
 ![image](https://github.com/user-attachments/assets/c9267495-91d1-47e2-b74e-b58cbc776a1a)
 
-![image](https://github.com/user-attachments/assets/2dbee9df-2caf-40e3-a989-0a66dad80ee5)
+
 
 ![image](https://github.com/user-attachments/assets/62355be4-8019-474b-849d-4148e68b2b17)
 
