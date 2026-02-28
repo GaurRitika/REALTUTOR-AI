@@ -153,9 +153,17 @@ Context:
         except Exception as e:
             return f"```\n{str(e)}\n```"
     
-    def _detect_language(self, language: str, file_name: str, code_snippet: str) -> str:
-        """Advanced language detection"""
-        if language and language.strip():
+    def _detect_language(self, language: Optional[str], file_name: Optional[str], code_snippet: str) -> str:
+        """
+        Enhanced language detection logic with support for modern frameworks and edge cases.
+        Args:
+            language: User-provided language hint.
+            file_name: The name of the file being analyzed.
+            code_snippet: The actual code content to analyze.
+        Returns:
+            str: Detected language identifier.
+        """
+        if language and language.strip() and language.lower() != 'unknown':
             return language.lower()
             
         if file_name:
@@ -165,23 +173,25 @@ Context:
                 'jsx': 'jsx', 'tsx': 'tsx', 'html': 'html', 'css': 'css',
                 'java': 'java', 'cpp': 'cpp', 'c': 'c', 'cs': 'csharp',
                 'go': 'go', 'rb': 'ruby', 'php': 'php', 'swift': 'swift',
-                'kt': 'kotlin', 'rs': 'rust', 'scala': 'scala'
+                'kt': 'kotlin', 'rs': 'rust', 'scala': 'scala',
+                'md': 'markdown', 'json': 'json', 'yml': 'yaml', 'yaml': 'yaml'
             }
             if ext in lang_map:
                 return lang_map[ext]
         
-        # Fallback detection based on code patterns
+        # Fallback detection based on code patterns (AI-optimized)
+        code_snippet_lower = code_snippet.lower()
         if 'def ' in code_snippet and ':' in code_snippet:
             return 'python'
+        elif 'import { ' in code_snippet or 'export const ' in code_snippet:
+            if 'react' in code_snippet_lower:
+                return 'tsx' if file_name and file_name.endswith('.tsx') else 'jsx'
+            return 'typescript' if file_name and file_name.endswith('.ts') else 'javascript'
         elif 'function' in code_snippet and '{' in code_snippet:
-            if 'import React' in code_snippet or 'jsx' in code_snippet:
-                return 'jsx'
             return 'javascript'
-        elif 'interface ' in code_snippet or 'type ' in code_snippet:
-            return 'typescript'
-        elif '<html' in code_snippet.lower():
+        elif '<html' in code_snippet_lower or '<!doctype' in code_snippet_lower:
             return 'html'
-        elif '@media' in code_snippet or '{' in code_snippet and ':' in code_snippet:
+        elif '@media' in code_snippet or ('{' in code_snippet and ':' in code_snippet and ';' in code_snippet):
             return 'css'
         
         return 'text'
