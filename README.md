@@ -148,6 +148,17 @@ You can customize the behavior of RealTutor AI by modifying:
 2. **No AI responses**: Check if your API key is valid and properly set in the .env file
 3. **Errors in console**: Check the Output panel in VS Code for detailed error messages
 
+## AI-Assisted Development with GitHub Copilot
+
+RealTutor AI was built with a strong focus on utilizing **GitHub Copilot** to accelerate development, improve code quality, and maintain high standards of documentation. Here's how Copilot assisted in the creative and technical process:
+
+- **Logic Refactoring**: Copilot helped optimize complex language detection algorithms in the backend, ensuring support for modern frameworks like React and TypeScript.
+- **Automated Test Generation**: The backend API's unit test suite was generated with Copilot's assistance, providing robust coverage for health checks and logic integrity.
+- **Code Standardization**: Copilot suggested professional docstrings for Flask routes and JSDoc for the extension's TypeScript source code.
+- **Problem Solving**: During the development of the VS Code webview integration, Copilot Chat assisted in debugging message-passing issues and refining the responsive design.
+
+By leveraging AI, we focused on the core innovation—building a truly helpful tutor for other developers—while maintaining professional code standards.
+
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request. It will really mean a lot ❤️❤️
