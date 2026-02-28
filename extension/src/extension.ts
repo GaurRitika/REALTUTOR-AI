@@ -16,7 +16,11 @@ const MAX_CACHE_SIZE = 1000; // Maximum number of cache entries
 // Cache storage
 let responseCache: Map<string, CacheEntry> = new Map();
 
-// Helper function to generate cache key
+/**
+ * Generates a unique SHA-256 hash for the given data to be used as a cache key.
+ * @param data Any data object to hash.
+ * @returns A hex string represention of the hash.
+ */
 function generateCacheKey(data: any): string {
     const content = JSON.stringify(data);
     return crypto.createHash('sha256').update(content).digest('hex');
@@ -40,7 +44,12 @@ function cleanCache() {
     }
 }
 
-// Helper function for HTTP requests with caching
+/**
+ * Fetches data from a URL with a specified timeout and signal support.
+ * @param url The target URL.
+ * @param options Request options.
+ * @param timeout Timeout in milliseconds.
+ */
 async function fetchWithTimeout(url: string, options: RequestInit, timeout = 5000): Promise<Response> {
     const controller = new AbortController();
     const id = setTimeout(() => controller.abort(), timeout);
@@ -52,7 +61,10 @@ async function fetchWithTimeout(url: string, options: RequestInit, timeout = 500
     return response;
 }
 
-// Helper to get all files in the workspace with contents (limit to 20 files, 100KB total)
+/**
+ * Retrieves up to 20 files from the workspace, limiting content to 100KB total.
+ * @returns A list of objects containing filename, content, and language.
+ */
 async function getProjectFilesWithContents(): Promise<{ filename: string, content: string, language: string }[]> {
     const files = await vscode.workspace.findFiles('**/*.{js,jsx,ts,tsx,py,java,cpp,c,h,cs,go,rb,php,html,css,scss,md,json}', '**/node_modules/**', 20);
     let totalSize = 0;
@@ -84,7 +96,9 @@ export function activate(context: vscode.ExtensionContext) {
     let errorDebounceTimeout: NodeJS.Timeout | undefined;
     let isConnected = false;
 
-    // Create and show the tutor panel
+    /**
+     * Initializes and displays the AI Tutor webview panel.
+     */
     function createTutorPanel() {
         tutorPanel = vscode.window.createWebviewPanel(
             'realtutor-ai.tutorView',
@@ -186,6 +200,12 @@ export function activate(context: vscode.ExtensionContext) {
     }
 
     // Use HTTP instead of WebSocket with caching
+    /**
+     * Sends an analysis request to the backend server with caching support.
+     * @param data The payload containing code context and user messages.
+     * @param retryCount Number of retries attempted.
+     * @returns A boolean indicating success or failure.
+     */
     async function sendAnalysisRequest(data: any, retryCount = 0): Promise<boolean> {
         try {
             const cacheKey = generateCacheKey(data);
@@ -211,7 +231,8 @@ export function activate(context: vscode.ExtensionContext) {
                 language = vscode.window.activeTextEditor.document.languageId;
             }
 
-            const response = await fetchWithTimeout('http://localhost:3001/analyze', {
+            // const response = await fetchWithTimeout('http://localhost:3001/analyze', {
+                const response = await fetchWithTimeout('https://realtutor-ai-backend.onrender.com/analyze', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
