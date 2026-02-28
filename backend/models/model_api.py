@@ -33,6 +33,11 @@ HTTP_PORT = 3001
 # Root endpoint handler
 @app.route('/', methods=['GET'])
 def root():
+    """
+    Root endpoint that provides a simple health check and list of available endpoints.
+    Returns:
+        JSON: A dictionary containing the status and available API endpoints.
+    """
     return jsonify({
         'status': 'RealTutor AI Backend is running',
         'endpoints': {
@@ -46,8 +51,14 @@ def root():
 # Add a new endpoint for HTTP-based analysis
 @app.route('/analyze', methods=['POST'])
 def analyze():
+    """
+    Endpoint for analyzing code snippets or entire projects via HTTP POST.
+    Expects JSON data with 'userMessage', 'codeContext', 'language', and optional 'projectFilesDetailed'.
+    Returns:
+        JSON: AI-generated analysis or error message.
+    """
     data = request.json
-    logger.info(f"Received analysis request: {data}")
+    logger.info(f"Received analysis request for file: {data.get('fileName', 'unknown')}")
     try:
         user_message = data.get("userMessage", "")
         code_context = data.get("codeContext", "")
@@ -56,6 +67,7 @@ def analyze():
         project_files = data.get("projectFilesDetailed", [])
 
         if project_files:
+            logger.info(f"Analyzing project with {len(project_files)} files")
             # Enhanced project analysis with language detection
             files_summary = []
             for f in project_files:
@@ -91,14 +103,14 @@ def analyze():
         logger.info("Successfully generated context-aware response")
         return jsonify(result)
     except Exception as e:
-        logger.error(f"Error processing analysis: {e}")
+        logger.error(f"Error processing analysis: {e}", exc_info=True)
         return jsonify({
             "type": "response",
             "data": {
                 "message": f"Error analyzing code: {str(e)}",
                 "model": "realtutor-ai"
             }
-        })
+        }), 500
 
 def detect_language_from_filename(filename: str) -> str:
     """Detect programming language from file extension"""
@@ -224,6 +236,12 @@ async def start_websocket_server():
 
 @app.route('/status', methods=['GET'])
 def status():
+    """
+    Status endpoint to verify the backend and its components are running.
+    Returns:
+        JSON: Current status, WebSocket port, and model information.
+    """
+    logger.debug("Status check requested")
     return jsonify({
         'status': 'running', 
         'websocket_port': WS_PORT,
@@ -232,16 +250,22 @@ def status():
 
 @app.route('/generate', methods=['POST'])
 def generate():
+    """
+    Endpoint for general AI response generation based on a prompt.
+    Returns:
+        JSON: The AI's response or error message.
+    """
     data = request.json
     prompt = data.get('prompt', '')
     language = data.get('language', '')
     
+    logger.info(f"Generating response for prompt: {prompt[:50]}...")
     try:
         # Use enhanced question answering with language context
         response = answer_coding_question(prompt, "", "", language)
         return jsonify({'response': response})
     except Exception as e:
-        logger.error(f"Error generating response: {e}")
+        logger.error(f"Error generating response: {e}", exc_info=True)
         return jsonify({'error': str(e)}), 500
 
 def run_flask_app():
